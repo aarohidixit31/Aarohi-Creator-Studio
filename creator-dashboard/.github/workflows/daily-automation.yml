@@ -1,0 +1,26 @@
+name: Daily creator-dashboard automation
+
+on:
+  schedule:
+    # 10:00 AM India Standard Time.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-daily-automation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake backend and run reminders
+        env:
+          AUTOMATION_URL: ${{ secrets.AUTOMATION_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$AUTOMATION_URL"
+          test -n "$CRON_SECRET"
+          curl --fail-with-body \
+            --retry 3 \
+            --retry-delay 20 \
+            --max-time 120 \
+            --request POST \
+            --header "X-Cron-Secret: $CRON_SECRET" \
+            "$AUTOMATION_URL/api/automation/cron"

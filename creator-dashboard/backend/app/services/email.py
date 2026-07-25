@@ -2,8 +2,9 @@ import html
 import json
 import logging
 import os
+import base64
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -114,6 +115,7 @@ def _send_email(
     subject: str,
     email_html: str,
     idempotency_key: str,
+    attachments: list[dict] | None = None,
 ) -> EmailResult:
     api_key = os.getenv("RESEND_API_KEY")
     sender = os.getenv("EMAIL_FROM")
@@ -134,6 +136,8 @@ def _send_email(
     reply_to = os.getenv("REPLY_TO_EMAIL") or os.getenv("ADMIN_EMAIL")
     if reply_to:
         payload["reply_to"] = reply_to
+    if attachments:
+        payload["attachments"] = attachments
 
     request = Request(
         RESEND_ENDPOINT,
@@ -167,7 +171,7 @@ def _record_delivery(collab_id: int, manager: EmailResult, brand: EmailResult) -
             return
         details = dict(collab.details or {})
         activity_log = list(details.get("activity_log") or [])
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         if manager.disabled and brand.disabled:
             summary = "Email notifications skipped - Resend is not configured"
@@ -219,20 +223,45 @@ def _record_delivery(collab_id: int, manager: EmailResult, brand: EmailResult) -
 
 
 def send_inquiry_notifications(collab_id: int, inquiry: dict) -> None:
-    manager_recipient = os.getenv("ADMIN_NOTIFICATION_EMAIL") or os.getenv("ADMIN_EMAIL")
     manager_subject, manager_html = _manager_email(inquiry, collab_id)
     brand_subject, brand_html = _brand_email(inquiry)
-
-    manager = (
+    internal_recipients = list(dict.fromkeys(
+        recipient
+        for recipient in (
+            os.getenv("ADMIN_EMAIL"),
+            os.getenv("ADMIN_NOTIFICATION_EMAIL"),
+        )
+        if recipient
+    ))
+    internal_results = [
         _send_email(
-            manager_recipient,
+            recipient,
             manager_subject,
             manager_html,
-            f"collab-{collab_id}-manager-v1",
+            f"collab-{collab_id}-internal-{index}-v1",
         )
-        if manager_recipient
-        else EmailResult("", False, error="Manager recipient is not configured", disabled=True)
-    )
+        for index, recipient in enumerate(internal_recipients, start=1)
+    ]
+    if internal_results:
+        failed = [result for result in internal_results if not result.sent]
+        manager = EmailResult(
+            recipient=", ".join(result.recipient for result in internal_results),
+            sent=not failed,
+            message_id=", ".join(
+                result.message_id for result in internal_results if result.message_id
+            ) or None,
+            error="; ".join(
+                f"{result.recipient}: {result.error}" for result in failed
+            ) or None,
+            disabled=all(result.disabled for result in internal_results),
+        )
+    else:
+        manager = EmailResult(
+            "",
+            False,
+            error="Aarohi/manager recipients are not configured",
+            disabled=True,
+        )
     brand = _send_email(
         inquiry["email"],
         brand_subject,
@@ -240,3 +269,105 @@ def send_inquiry_notifications(collab_id: int, inquiry: dict) -> None:
         f"collab-{collab_id}-brand-v1",
     )
     _record_delivery(collab_id, manager, brand)
+
+
+def _invoice_attachment(invoice_number: str, pdf_bytes: bytes) -> list[dict]:
+    return [{
+        "filename": f"{invoice_number}.pdf",
+        "content": base64.b64encode(pdf_bytes).decode("ascii"),
+    }]
+
+
+def _invoice_delivery_email(invoice: dict, reminder: bool = False) -> tuple[str, str]:
+    contact_name = _safe(invoice.get("contact_person"), "there").split()[0]
+    amount = f"INR {float(invoice['total']):,.0f}"
+    due_date = _safe(invoice.get("due_date"), "As per agreed payment terms")
+    if reminder:
+        subject = f"Payment reminder: {invoice['invoice_number']}"
+        heading = f"A quick payment reminder for {invoice['invoice_number']}"
+        intro = (
+            f"Hi {contact_name}, this is a friendly reminder that payment of "
+            f"<strong>{amount}</strong> for <strong>{_safe(invoice['invoice_number'])}</strong> "
+            f"is still pending."
+        )
+        preheader = f"Payment reminder for {invoice['invoice_number']}."
+        note = "If payment has already been processed, please reply with the transaction reference and disregard this reminder."
+    else:
+        subject = f"Invoice {invoice['invoice_number']} from Aarohi Inframe"
+        heading = f"Invoice {invoice['invoice_number']}"
+        intro = (
+            f"Hi {contact_name}, thank you for collaborating with Aarohi Inframe. "
+            f"Please find the invoice for <strong>{amount}</strong> attached as a PDF."
+        )
+        preheader = f"Your invoice {invoice['invoice_number']} is attached."
+        note = "Please reply to this email if your finance team needs any additional information."
+
+    body = f"""
+      <p style="margin:0 0 7px;color:#5b5fef;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">{'Payment follow-up' if reminder else 'Invoice attached'}</p>
+      <h1 style="margin:0 0 14px;color:#111b45;font-size:27px;line-height:1.2;">{heading}</h1>
+      <p style="margin:0 0 20px;color:#596177;font-size:14px;line-height:1.7;">{intro}</p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f7ff;border-left:4px solid #5b5fef;border-radius:8px;">
+        <tr><td style="padding:17px 20px;color:#737c92;font-size:11px;">INVOICE</td><td align="right" style="padding:17px 20px;color:#111b45;font-size:13px;font-weight:700;">{_safe(invoice['invoice_number'])}</td></tr>
+        <tr><td style="padding:0 20px 17px;color:#737c92;font-size:11px;">AMOUNT</td><td align="right" style="padding:0 20px 17px;color:#111b45;font-size:16px;font-weight:800;">{amount}</td></tr>
+        <tr><td style="padding:0 20px 17px;color:#737c92;font-size:11px;">DUE DATE</td><td align="right" style="padding:0 20px 17px;color:#111b45;font-size:13px;font-weight:700;">{due_date}</td></tr>
+      </table>
+      <div style="margin:22px 0;padding:16px 18px;background:#fff8cf;border-radius:9px;color:#534c1c;font-size:12px;line-height:1.7;">
+        <strong>Payment terms:</strong> {_safe(invoice.get('payment_terms'))}
+      </div>
+      <p style="margin:0;color:#7a8298;font-size:12px;line-height:1.7;">{note}</p>
+      <p style="margin:22px 0 0;color:#111b45;font-size:14px;"><strong>Aarohi Dixit</strong><br><span style="color:#7a8298;">Tech Content Creator · Aarohi Inframe</span></p>
+    """
+    return subject, _email_shell(preheader, body)
+
+
+def send_invoice_delivery(
+    invoice: dict,
+    pdf_bytes: bytes,
+    *,
+    reminder: bool = False,
+    idempotency_key: str,
+) -> EmailResult:
+    subject, email_html = _invoice_delivery_email(invoice, reminder=reminder)
+    return _send_email(
+        invoice["recipient"],
+        subject,
+        email_html,
+        idempotency_key,
+        attachments=_invoice_attachment(invoice["invoice_number"], pdf_bytes),
+    )
+
+
+def send_manager_attention_digest(items: list[dict], idempotency_key: str) -> EmailResult:
+    recipient = os.getenv("ADMIN_NOTIFICATION_EMAIL") or os.getenv("ADMIN_EMAIL")
+    if not recipient:
+        return EmailResult("", False, disabled=True, error="Manager recipient is not configured")
+
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    rows = "".join(
+        f"""
+        <tr>
+          <td style="padding:13px 14px;border-top:1px solid #e8ebf2;color:#111b45;font-size:12px;font-weight:700;">{_safe(item['brand_name'])}</td>
+          <td style="padding:13px 14px;border-top:1px solid #e8ebf2;color:#596177;font-size:12px;">{_safe(item['reason'])}</td>
+          <td style="padding:13px 14px;border-top:1px solid #e8ebf2;color:#5b5fef;font-size:11px;font-weight:700;">{_safe(item['age'])}</td>
+        </tr>
+        """
+        for item in items
+    )
+    body = f"""
+      <p style="margin:0 0 7px;color:#5b5fef;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">Daily manager digest</p>
+      <h1 style="margin:0 0 12px;color:#111b45;font-size:27px;line-height:1.2;">{len(items)} collaboration follow-up{'s' if len(items) != 1 else ''} need attention</h1>
+      <p style="margin:0 0 22px;color:#596177;font-size:14px;line-height:1.7;">These inquiries or scheduled follow-ups are waiting for action.</p>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e6f0;border-radius:9px;border-collapse:separate;overflow:hidden;">
+        <tr style="background:#f6f7ff;"><th align="left" style="padding:11px 14px;color:#737c92;font-size:10px;">BRAND</th><th align="left" style="padding:11px 14px;color:#737c92;font-size:10px;">ACTION</th><th align="left" style="padding:11px 14px;color:#737c92;font-size:10px;">WAITING</th></tr>
+        {rows}
+      </table>
+      <div style="margin-top:24px;">
+        <a href="{html.escape(frontend_url)}/admin/attention" style="display:inline-block;background:#2949d3;color:#ffffff;border-radius:9px;padding:13px 20px;text-decoration:none;font-size:13px;font-weight:700;">Open manager attention queue</a>
+      </div>
+    """
+    return _send_email(
+        recipient,
+        f"Daily follow-up digest: {len(items)} items need attention",
+        _email_shell("Your creator dashboard has follow-ups waiting.", body),
+        idempotency_key,
+    )

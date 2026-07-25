@@ -28,9 +28,13 @@ export default function InvoiceList() {
   const [ledger, setLedger] = useState(null)
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [loading, setLoading] = useState(true)
   const [updatingId, setUpdatingId] = useState(null)
+  const [deliveryAction, setDeliveryAction] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   async function load() {
     setError('')
@@ -60,9 +64,12 @@ export default function InvoiceList() {
         || invoice.invoice_number.toLowerCase().includes(normalized)
         || invoice.brand?.name?.toLowerCase().includes(normalized)
         || invoice.brand?.contact_person?.toLowerCase().includes(normalized)
-      return matchesStatus && matchesQuery
+      const issuedAt = new Date(invoice.created_at)
+      const matchesFrom = !dateFrom || issuedAt >= new Date(`${dateFrom}T00:00:00`)
+      const matchesTo = !dateTo || issuedAt <= new Date(`${dateTo}T23:59:59`)
+      return matchesStatus && matchesQuery && matchesFrom && matchesTo
     })
-  }, [invoices, filter, query])
+  }, [invoices, filter, query, dateFrom, dateTo])
 
   async function updateStatus(invoice, status) {
     setUpdatingId(invoice.id)
@@ -77,6 +84,34 @@ export default function InvoiceList() {
       setError(err.message)
     } finally {
       setUpdatingId(null)
+    }
+  }
+
+  async function deliverInvoice(invoice, reminder = false) {
+    const recipient = invoice.brand?.email
+    if (!recipient) {
+      setError('Add a billing email to this brand profile first.')
+      return
+    }
+    const actionLabel = reminder ? 'send a payment reminder' : 'email this invoice PDF'
+    if (!window.confirm(`Ready to ${actionLabel} to ${recipient}?`)) return
+
+    const actionKey = `${invoice.id}-${reminder ? 'remind' : 'send'}`
+    setDeliveryAction(actionKey)
+    setError('')
+    setNotice('')
+    try {
+      const response = await authFetch(`/api/invoices/${invoice.id}/${reminder ? 'remind' : 'send'}`, {
+        method: 'POST',
+      })
+      const body = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(body?.detail || 'The email could not be delivered')
+      setNotice(body.message)
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeliveryAction('')
     }
   }
 
@@ -158,9 +193,14 @@ export default function InvoiceList() {
               placeholder="Brand or invoice number"
             />
           </label>
+          <div className="invoice-date-range">
+            <label><span>From</span><input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
+            <label><span>To</span><input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+            {(dateFrom || dateTo) && <button type="button" onClick={() => { setDateFrom(''); setDateTo('') }}>Clear</button>}
+          </div>
         </div>
 
-        {error && <p className="manager-alert error">{error}</p>}
+        {(error || notice) && <p className={`manager-alert ${error ? 'error' : 'success'}`}>{error || notice}</p>}
 
         {loading ? (
           <div className="invoice-empty">Loading your financial desk...</div>
@@ -193,6 +233,8 @@ export default function InvoiceList() {
                       <td>
                         <strong className="invoice-number-cell">{invoice.invoice_number}</strong>
                         <span>{invoice.line_items.length} line item{invoice.line_items.length === 1 ? '' : 's'}</span>
+                        {invoice.sent_at && <small className="invoice-delivery-meta">Sent {formatDate(invoice.sent_at)}</small>}
+                        {invoice.last_reminded_at && <small className="invoice-delivery-meta">Reminder {invoice.reminder_count} · {formatDate(invoice.last_reminded_at)}</small>}
                       </td>
                       <td>
                         <strong>{invoice.brand?.name || 'Unknown brand'}</strong>
@@ -215,9 +257,32 @@ export default function InvoiceList() {
                         </select>
                       </td>
                       <td>
-                        <button className="invoice-download" type="button" onClick={() => downloadPdf(invoice)}>
-                          PDF
-                        </button>
+                        <div className="invoice-row-actions">
+                          <button className="invoice-download" type="button" onClick={() => downloadPdf(invoice)}>PDF</button>
+                          {status !== 'paid' && (
+                            <button
+                              className="invoice-email-action"
+                              type="button"
+                              disabled={Boolean(deliveryAction) || !invoice.brand?.email}
+                              title={invoice.brand?.email ? `Send to ${invoice.brand.email}` : 'Add a brand email first'}
+                              onClick={() => deliverInvoice(invoice)}
+                            >
+                              {deliveryAction === `${invoice.id}-send`
+                                ? 'Sending...'
+                                : invoice.sent_at ? 'Resend PDF' : 'Email invoice'}
+                            </button>
+                          )}
+                          {(status === 'sent' || status === 'overdue') && (
+                            <button
+                              className="invoice-reminder-action"
+                              type="button"
+                              disabled={Boolean(deliveryAction) || !invoice.brand?.email}
+                              onClick={() => deliverInvoice(invoice, true)}
+                            >
+                              {deliveryAction === `${invoice.id}-remind` ? 'Sending...' : 'Payment reminder'}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

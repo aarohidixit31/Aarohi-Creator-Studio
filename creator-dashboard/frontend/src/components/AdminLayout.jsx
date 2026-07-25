@@ -6,8 +6,10 @@ const NAV = [
   { to: '/admin', end: true, label: 'Overview', icon: '01' },
   { to: '/admin/attention', label: 'Needs attention', icon: '!' },
   { to: '/admin/brands', label: 'Brands', icon: '02' },
-  { to: '/admin/media-kit', label: 'Media kit', icon: '03' },
-  { to: '/admin/invoices', end: true, label: 'Invoices', icon: '04' },
+  { to: '/admin/content', label: 'Content library', icon: '03' },
+  { to: '/admin/social-stats', label: 'Live stats', icon: '04' },
+  { to: '/admin/media-kit', label: 'Media kit', icon: '05' },
+  { to: '/admin/invoices', end: true, label: 'Invoices', icon: '06' },
   { to: '/admin/invoices/new', label: 'New invoice', icon: '+' },
 ]
 

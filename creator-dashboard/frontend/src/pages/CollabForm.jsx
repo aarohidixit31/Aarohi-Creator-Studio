@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Feedback, FormField } from '../components/ui.jsx'
-
-const API = import.meta.env.VITE_API_URL || ''
+import { API, apiError } from '../api.js'
 
 const CAMPAIGN_TYPES = [
   'Instagram Reel',
@@ -31,6 +30,7 @@ export default function CollabForm() {
   const [status, setStatus] = useState('idle')
   const [result, setResult] = useState(null)
   const [campaignError, setCampaignError] = useState('')
+  const [submitError, setSubmitError] = useState('')
 
   const completed = useMemo(() => {
     const fields = [
@@ -65,6 +65,7 @@ export default function CollabForm() {
       return
     }
     setStatus('sending')
+    setSubmitError('')
     try {
       const campaignType = form.campaign_types
         .map((type) => (type === 'Other' ? form.campaign_other.trim() || 'Other' : type))
@@ -81,13 +82,13 @@ export default function CollabForm() {
         }),
       })
       if (!response.ok) {
-        const body = await response.json().catch(() => null)
-        throw new Error(body?.detail || 'We could not send your inquiry.')
+        throw new Error(await apiError(response, 'We could not send your inquiry.'))
       }
       setResult(await response.json())
       setStatus('done')
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
+      setSubmitError(error.message || 'Please check your connection and try again.')
       setStatus('error')
     }
   }
@@ -96,6 +97,7 @@ export default function CollabForm() {
     setForm(EMPTY_FORM)
     setResult(null)
     setCampaignError('')
+    setSubmitError('')
     setStatus('idle')
   }
 
@@ -264,7 +266,7 @@ export default function CollabForm() {
 
             {status === 'error' && (
               <Feedback tone="error" title="The inquiry was not sent">
-                Please check your connection and try again. Your form details are still here.
+                {submitError || 'Please check your connection and try again. Your form details are still here.'}
               </Feedback>
             )}
 

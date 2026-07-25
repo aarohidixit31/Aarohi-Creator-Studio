@@ -1,0 +1,39 @@
+name: Encrypted production database backup
+
+on:
+  schedule:
+    # Every Sunday at 10:30 AM India Standard Time.
+    - cron: "0 5 * * 0"
+  workflow_dispatch:
+
+jobs:
+  backup-postgres:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate backup secrets
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          test -n "$DATABASE_URL"
+          test -n "$BACKUP_ENCRYPTION_KEY"
+
+      - name: Export and encrypt database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_ENCRYPTION_KEY: ${{ secrets.BACKUP_ENCRYPTION_KEY }}
+        run: |
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file=creator-dashboard.dump
+          openssl enc -aes-256-cbc -salt -pbkdf2 \
+            -in creator-dashboard.dump \
+            -out creator-dashboard-${GITHUB_RUN_ID}.dump.enc \
+            -pass env:BACKUP_ENCRYPTION_KEY
+          rm creator-dashboard.dump
+
+      - name: Store encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-dashboard-backup-${{ github.run_id }}
+          path: creator-dashboard-${{ github.run_id }}.dump.enc
+          retention-days: 30
+          if-no-files-found: error

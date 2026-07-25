@@ -10,7 +10,7 @@ Generate a password hash once with:
 and paste the result into ADMIN_PASSWORD_HASH.
 """
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -19,12 +19,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-this-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY") or "change-this-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24 * 7  # 1 week — it's just you, no need to re-login daily
 
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "you@example.com")
-ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH", "")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL") or "you@example.com"
+ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH") or ""
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -39,7 +39,7 @@ def verify_admin(email: str, password: str) -> bool:
 
 
 def create_access_token() -> str:
-    expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
     return jwt.encode({"sub": ADMIN_EMAIL, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 

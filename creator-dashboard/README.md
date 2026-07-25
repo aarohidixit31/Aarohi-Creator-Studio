@@ -1,107 +1,135 @@
-# Creator Dashboard
+# Aarohi Inframe Creator Dashboard
 
-Your media kit, collab CRM, and invoice generator — one platform, one link to send brands.
+A public media kit and private creator operations platform for collaboration CRM, content proof, invoices, email delivery, reminders, and manager workflows.
 
-## What's in here
-
-```
-creator-dashboard/
-├── backend/          FastAPI app (API, database, PDF generation)
-└── frontend/         React + Vite app (public media kit, collab form, admin dashboard)
-```
-
-## What's working right now
-
-- **Public media kit page** (`/`) — pulls from the database, shows your stats, rate card, past collabs, testimonials
-- **Collab inquiry form** (`/collab`) — brands fill this out, it lands straight in your CRM
-- **Admin login** (`/admin/login`)
-- **Admin dashboard** (`/admin`) — see all collab inquiries, move them through your pipeline (New inquiry → In discussion → Negotiating → Confirmed → Content live → Invoiced → Paid → Closed)
-- **Invoice generator** (`/admin/invoices/new`) — pick a brand, add line items, generate a branded PDF instantly
-
-## What's NOT built yet (next steps, in order of what I'd tackle first)
-
-1. **Media kit content editor UI** — right now you'd update your bio/rates/testimonials via a direct API call (or I can build you a simple settings form next)
-2. **Instagram + YouTube live stat sync** — the stat cards currently just show your handle; wiring up the real follower/engagement numbers is the next big piece
-3. **Email notifications** — when someone submits a collab inquiry, you don't get pinged yet (I'd recommend Resend or a simple SMTP setup)
-4. **Invoice status tracking UI** — the backend supports draft/sent/paid/overdue, just needs a small UI
-
-None of this is hard — it all builds on what's already here. Just say the word on what to do next.
-
----
-
-## Local setup
+## Local development
 
 ### Backend
 
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+```powershell
+cd D:\creator-dashboard\creator-dashboard\backend
+.\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-cp .env.example .env
-```
-
-Generate your admin password hash and paste it into `.env`:
-
-```bash
-python3 -c "from passlib.context import CryptContext; print(CryptContext(schemes=['bcrypt']).hash('your-password-here'))"
-```
-
-Also generate a `SECRET_KEY`:
-
-```bash
-python3 -c "import secrets; print(secrets.token_hex(32))"
-```
-
-Then run it:
-
-```bash
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-API docs (auto-generated, useful for testing): http://localhost:8000/docs
+Copy `.env.example` to `.env` and configure the admin email, bcrypt password hash, secret key, and Resend values. Local development uses SQLite and local image storage automatically.
+
+API documentation: <http://localhost:8000/docs>
 
 ### Frontend
 
-```bash
-cd frontend
+```powershell
+cd D:\creator-dashboard\creator-dashboard\frontend
 npm install
 npm run dev
 ```
 
-Visit http://localhost:5173 — the Vite dev server proxies `/api` calls to your local backend automatically.
+Application: <http://localhost:5173>
 
----
+### Tests
 
-## Deploying (free tier: Vercel + Render + Neon)
+```powershell
+cd D:\creator-dashboard\creator-dashboard\backend
+.\venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
 
-### 1. Database — Neon (free Postgres)
-- Create a project at neon.tech
-- Copy the connection string
+```powershell
+cd D:\creator-dashboard\creator-dashboard\frontend
+npm run build
+```
 
-### 2. Backend — Render
-- Push this repo to GitHub
-- New Web Service on render.com, point it at `backend/`
-- Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Add environment variables: `DATABASE_URL` (from Neon), `SECRET_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `CREATOR_NAME`, `CREATOR_TAGLINE`, `PAYMENT_DETAILS`
+## Production environment
 
-Note: Render's free tier spins down after 15 min of inactivity — the first request after idle takes ~30s. Fine for personal use; if a brand hits your form cold it'll just feel slightly slow on the first load.
+Set these values on Render:
 
-### 3. Frontend — Vercel
-- Import the repo, set root directory to `frontend/`
-- Add environment variable `VITE_API_URL` = your Render backend URL (e.g. `https://your-app.onrender.com`)
-- Deploy
+- `ENVIRONMENT=production`
+- `DATABASE_URL`: Neon pooled Postgres connection string
+- `SECRET_KEY`: random value of at least 32 characters
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD_HASH`: bcrypt hash, never a plain password
+- `CORS_ORIGINS`: deployed Vercel URL, without a trailing slash
+- `FRONTEND_URL`: deployed Vercel URL
+- `RESEND_API_KEY`
+- `EMAIL_FROM`: verified Resend sender
+- `ADMIN_NOTIFICATION_EMAIL`
+- `REPLY_TO_EMAIL`
+- `CLOUDINARY_CLOUD_NAME`
+- `CLOUDINARY_API_KEY`
+- `CLOUDINARY_API_SECRET`
+- `AUTOMATION_ENABLED=true`
+- `INVOICE_REMINDER_INTERVAL_DAYS=3`
+- `CRON_SECRET`: random value of at least 24 characters
+- Creator and payment values from `.env.example`
 
-Once both are live, `yourproject.vercel.app` is the link you send to brands.
+The backend deliberately refuses to boot in production when Postgres, bcrypt authentication, CORS, Resend, or Cloudinary is unsafe or incomplete.
 
----
+### Render commands
 
-## Connecting your socials (when you're ready)
+Root directory:
 
-- **Instagram**: needs a Business/Creator account linked to a Facebook Page, then Meta Graph API access via a Meta Developer App. Some insight endpoints need app review.
-- **YouTube**: YouTube Data API v3 — just needs an API key from Google Cloud Console, no review process.
-- **LinkedIn**: personal profile analytics API access is very restricted (Marketing Partner program only) — plan on updating those numbers manually via the media kit settings.
+```text
+backend
+```
 
-I can walk you through any of these when you're ready to wire them up.
+Build:
+
+```text
+pip install -r requirements.txt
+```
+
+Pre-deploy:
+
+```text
+alembic upgrade head
+```
+
+Start:
+
+```text
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+### Vercel
+
+Use `frontend` as the project root and set:
+
+```text
+VITE_API_URL=https://your-render-service.onrender.com
+```
+
+## Scheduled automation
+
+The GitHub workflow `.github/workflows/daily-automation.yml` runs at 10:00 AM IST. Add repository secrets:
+
+- `AUTOMATION_URL`: Render backend URL
+- `CRON_SECRET`: same value configured on Render
+
+It sends overdue invoice reminders at the configured interval and emails the manager a digest of unanswered inquiries and due follow-ups.
+
+## Encrypted database backups
+
+The workflow `.github/workflows/database-backup.yml` creates a weekly encrypted Postgres dump retained for 30 days. Add:
+
+- `DATABASE_URL`: Neon Postgres URL
+- `BACKUP_ENCRYPTION_KEY`: strong backup-only passphrase
+
+To decrypt and restore a downloaded backup:
+
+```powershell
+openssl enc -d -aes-256-cbc -pbkdf2 -in creator-dashboard.dump.enc -out creator-dashboard.dump -pass pass:YOUR_BACKUP_KEY
+pg_restore --clean --if-exists --no-owner --dbname YOUR_RESTORE_DATABASE_URL creator-dashboard.dump
+```
+
+Restore into a temporary database first and verify it before replacing production data.
+
+## Media storage
+
+Development uploads are written to `backend/uploads`. Production uploads go to Cloudinary. Local filesystem fallback is disabled when `ENVIRONMENT=production` because Render storage is temporary.
+
+## Deferred integration
+
+Instagram Graph API connection is intentionally deferred. Manual Instagram figures remain available, and the cached social-stat architecture is ready for credentials later.

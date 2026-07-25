@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -17,6 +17,7 @@ class Brand(Base):
 
     collabs = relationship("Collab", back_populates="brand", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="brand", cascade="all, delete-orphan")
+    content_items = relationship("ContentItem", back_populates="brand")
 
 
 class Collab(Base):
@@ -43,6 +44,7 @@ class Collab(Base):
 
     brand = relationship("Brand", back_populates="collabs")
     invoices = relationship("Invoice", back_populates="collab")
+    content_items = relationship("ContentItem", back_populates="collab")
 
 
 class Invoice(Base):
@@ -66,6 +68,10 @@ class Invoice(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     paid_at = Column(DateTime(timezone=True), nullable=True)
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    last_reminded_at = Column(DateTime(timezone=True), nullable=True)
+    reminder_count = Column(Integer, default=0, nullable=False)
+    email_message_id = Column(String, nullable=True)
 
     brand = relationship("Brand", back_populates="invoices")
     collab = relationship("Collab", back_populates="invoices")
@@ -100,3 +106,55 @@ class MediaKitContent(Base):
     # Flexible admin-managed sections such as contact details, social links,
     # performance highlights, audience insights, and uploaded media.
     extras = Column(JSON, default=dict)
+    # Complete working copy used by the manager/Aarohi approval workflow.
+    # Published columns above remain the source for the public media kit.
+    draft_content = Column(JSON, nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    published_by = Column(String, nullable=True)
+
+
+class ContentItem(Base):
+    __tablename__ = "content_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    brand_id = Column(Integer, ForeignKey("brands.id"), nullable=True)
+    collab_id = Column(Integer, ForeignKey("collabs.id"), nullable=True)
+    platform = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    content_url = Column(String)
+    thumbnail_url = Column(String)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    objective = Column(Text)
+    results = Column(Text)
+    notes = Column(Text)
+    metrics = Column(JSON, default=dict)
+    featured = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    brand = relationship("Brand", back_populates="content_items")
+    collab = relationship("Collab", back_populates="content_items")
+
+
+class SocialStatCache(Base):
+    __tablename__ = "social_stat_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    platform = Column(String, unique=True, nullable=False, index=True)
+    status = Column(String, default="disconnected", nullable=False)
+    data = Column(JSON, default=dict)
+    error = Column(Text)
+    last_attempted_at = Column(DateTime(timezone=True), nullable=True)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SocialStatSnapshot(Base):
+    __tablename__ = "social_stat_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    platform = Column(String, nullable=False, index=True)
+    followers = Column(Integer, default=0, nullable=False)
+    total_views = Column(Integer, nullable=True)
+    media_count = Column(Integer, nullable=True)
+    captured_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

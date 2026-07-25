@@ -2,21 +2,28 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { API } from '../api.js'
 
-export default function MediaKit() {
-  const [data, setData] = useState(null)
+export default function MediaKit({ initialData = null, previewMode = false }) {
+  const [data, setData] = useState(initialData)
+  const [caseStudies, setCaseStudies] = useState([])
   const [error, setError] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrollProgress, setScrollProgress] = useState(0)
 
   useEffect(() => {
-    fetch(`${API}/api/media-kit/`)
-      .then((response) => {
-        if (!response.ok) throw new Error('Could not load media kit')
-        return response.json()
-      })
-      .then(setData)
-      .catch(() => setError(true))
-  }, [])
+    if (!initialData) {
+      fetch(`${API}/api/media-kit/`)
+        .then((response) => {
+          if (!response.ok) throw new Error('Could not load media kit')
+          return response.json()
+        })
+        .then(setData)
+        .catch(() => setError(true))
+    }
+    fetch(`${API}/api/content/case-studies`)
+      .then((response) => response.ok ? response.json() : [])
+      .then(setCaseStudies)
+      .catch(() => setCaseStudies([]))
+  }, [initialData])
 
   useEffect(() => {
     if (!data) return undefined
@@ -59,10 +66,28 @@ export default function MediaKit() {
   if (error) return <Centered>Could not load the media kit right now. Please refresh.</Centered>
   if (!data) return <Centered><span className="loading-dot" />Loading media kit...</Centered>
 
-  const socials = data.social_links?.length ? data.social_links : legacySocials(data)
+  const visibleItems = (items) => (items || []).filter((item) => item?.visible !== false)
+  const hiddenSections = new Set(data.hidden_sections || [])
+  const sectionOrder = data.section_order || []
+  const sectionStyle = (section) => ({ order: Math.max(0, sectionOrder.indexOf(section)) })
+  const socials = visibleItems(data.social_links).length
+    ? visibleItems(data.social_links)
+    : legacySocials(data)
+  const highlights = visibleItems(data.highlights)
+  const audienceInsights = visibleItems(data.audience_insights)
+  const gallery = visibleItems(data.gallery)
+  const rates = visibleItems(data.rate_card)
+  const pastCollabs = visibleItems(data.past_collabs)
+  const testimonials = visibleItems(data.testimonials)
 
   return (
     <div className="media-site">
+      {previewMode && (
+        <div className="draft-preview-banner">
+          <div><strong>Draft preview</strong><span>Only you can see these unsaved or unpublished changes.</span></div>
+          <button type="button" onClick={() => window.close()}>Close preview</button>
+        </div>
+      )}
       <nav className={`media-nav${menuOpen ? ' menu-open' : ''}`}>
         <a href="#top" className="media-logo"><span>AI</span>Aarohi Inframe</a>
         <button
@@ -75,9 +100,9 @@ export default function MediaKit() {
           <span /><span /><span />
         </button>
         <div className="media-nav-links" onClick={() => setMenuOpen(false)}>
-          <a href={data.gallery?.length ? '#work' : '#proof'}>Work</a>
-          <a href={data.rate_card?.length ? '#services' : '#audience'}>Services</a>
-          <a href="#audience">Audience</a>
+          <a href={gallery.length || caseStudies.length ? '#work' : '#proof'}>Work</a>
+          <a href={rates.length && !hiddenSections.has('services') ? '#services' : '#audience'}>Services</a>
+          {!hiddenSections.has('audience') && <a href="#audience">Audience</a>}
           <Link className="media-nav-cta" to="/collab">Work with me</Link>
         </div>
         <span className="media-scroll-progress" style={{ width: `${scrollProgress}%` }} />
@@ -123,28 +148,30 @@ export default function MediaKit() {
           </div>
         </section>
 
-        {data.content_pillars?.length > 0 && (
-          <div className="pillar-strip media-reveal">
+        <div className="media-reorderable">
+        {!hiddenSections.has('pillars') && data.content_pillars?.length > 0 && (
+          <div className="pillar-strip media-reveal" style={sectionStyle('pillars')}>
             <span>Creating around</span>
             {data.content_pillars.map((pillar) => <strong key={pillar}>{pillar}</strong>)}
           </div>
         )}
 
-        <section className="media-section media-proof media-reveal" id="proof">
+        {!hiddenSections.has('proof') && (
+        <section className="media-section media-proof media-reveal" id="proof" style={sectionStyle('proof')}>
           <SectionIntro
             eyebrow="Performance at a glance"
             title="Numbers that tell a stronger story."
             body="Clear, manager-updated proof of reach, engagement and audience quality."
           />
           <div className="media-metric-grid">
-            {(data.highlights || []).map((item, index) => (
+            {highlights.map((item, index) => (
               <article className={`media-metric-card ${index === 0 ? 'featured' : ''}`} key={`${item.label}-${index}`}>
                 <span>{item.label}</span>
                 <strong><AnimatedStat value={item.value} /></strong>
                 {item.note && <small>{item.note}</small>}
               </article>
             ))}
-            {!data.highlights?.length && socials.map((social, index) => (
+            {!highlights.length && socials.map((social, index) => (
               <article className={`media-metric-card ${index === 0 ? 'featured' : ''}`} key={social.platform}>
                 <span>{social.platform}</span>
                 <strong><AnimatedStat value={formatCount(social.follower_count)} /></strong>
@@ -153,8 +180,10 @@ export default function MediaKit() {
             ))}
           </div>
         </section>
+        )}
 
-        <section className="media-section media-split media-reveal" id="audience">
+        {!hiddenSections.has('audience') && (
+        <section className="media-section media-split media-reveal" id="audience" style={sectionStyle('audience')}>
           <div>
             <SectionIntro
               eyebrow="Audience"
@@ -162,7 +191,7 @@ export default function MediaKit() {
               body="A focused community of students, developers and early-career professionals who want practical tools and honest guidance."
             />
             <div className="audience-list">
-              {(data.audience_insights || []).map((item) => (
+              {audienceInsights.map((item) => (
                 <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>
               ))}
             </div>
@@ -172,16 +201,17 @@ export default function MediaKit() {
             {socials.map((social, index) => <SocialLink key={`${social.platform}-${index}`} social={social} />)}
           </div>
         </section>
+        )}
 
-        {data.gallery?.length > 0 && (
-          <section className="media-section media-reveal" id="work">
+        {!hiddenSections.has('gallery') && gallery.length > 0 && (
+          <section className="media-section media-reveal" id="work" style={sectionStyle('gallery')}>
             <SectionIntro
               eyebrow="Selected proof"
               title="Campaigns, content and performance."
               body="A visual snapshot of the work and outcomes behind the numbers."
             />
             <div className="media-gallery">
-              {data.gallery.map((item, index) => {
+              {gallery.map((item, index) => {
                 const content = (
                   <>
                     <img src={mediaUrl(item.image_url)} alt={item.title} />
@@ -196,15 +226,50 @@ export default function MediaKit() {
           </section>
         )}
 
-        {data.rate_card?.length > 0 && (
-          <section className="media-section services-section media-reveal" id="services">
+        {!hiddenSections.has('case_studies') && caseStudies.length > 0 && (
+          <section className="media-section public-case-studies media-reveal" id={gallery.length ? 'case-studies' : 'work'} style={sectionStyle('case_studies')}>
+            <SectionIntro
+              eyebrow="Performance case studies"
+              title="Creative work backed by results."
+              body="Selected campaigns with the context and numbers brands need to evaluate a partnership."
+            />
+            <div className="public-case-study-grid">
+              {caseStudies.map((item) => (
+                <article className="public-case-study-card" key={item.id}>
+                  <div className="public-case-study-media">
+                    {item.thumbnail_url
+                      ? <img src={mediaUrl(item.thumbnail_url)} alt="" />
+                      : <div><span>{item.platform.slice(0, 2)}</span></div>}
+                    <span>{item.platform}</span>
+                  </div>
+                  <div className="public-case-study-body">
+                    <span>{item.brand?.name || 'Creator original'}</span>
+                    <h3>{item.title}</h3>
+                    <p>{item.results || item.objective || 'Performance snapshot available for this content.'}</p>
+                    <div>
+                      <CaseMetric label="Views" value={formatCount(item.metrics?.views)} />
+                      <CaseMetric label="Reach" value={formatCount(item.metrics?.reach)} />
+                      {item.metrics?.conversions != null
+                        ? <CaseMetric label="Conversions" value={formatCount(item.metrics.conversions)} />
+                        : <CaseMetric label="Engagement" value={item.metrics?.engagement_rate != null ? `${item.metrics.engagement_rate}%` : '—'} />}
+                    </div>
+                    {item.content_url && <a href={item.content_url} target="_blank" rel="noreferrer">View live content <span>↗</span></a>}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!hiddenSections.has('services') && rates.length > 0 && (
+          <section className="media-section services-section media-reveal" id="services" style={sectionStyle('services')}>
             <SectionIntro
               eyebrow="Services & investment"
               title="Flexible formats, professional execution."
               body="Every partnership is shaped around the campaign goal, audience and creative fit."
             />
             <div className="service-list">
-              {data.rate_card.map((item, index) => (
+              {rates.map((item, index) => (
                 <div key={`${item.deliverable}-${index}`}>
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <strong>{item.deliverable}</strong>
@@ -215,15 +280,15 @@ export default function MediaKit() {
           </section>
         )}
 
-        {data.past_collabs?.length > 0 && (
-          <section className="media-section collab-section media-reveal">
+        {!hiddenSections.has('collaborations') && pastCollabs.length > 0 && (
+          <section className="media-section collab-section media-reveal" style={sectionStyle('collaborations')}>
             <SectionIntro
               eyebrow="Trusted by"
               title="Previous brand collaborations."
               body="Partnership experience across technology, education and career-focused brands."
             />
             <div className="brand-grid">
-              {data.past_collabs.map((collab, index) => {
+              {pastCollabs.map((collab, index) => {
                 const card = (
                   <>
                     {collab.image_url || collab.logo_url
@@ -240,8 +305,8 @@ export default function MediaKit() {
           </section>
         )}
 
-        {data.partner_reasons?.length > 0 && (
-          <section className="media-section partner-section media-reveal">
+        {!hiddenSections.has('partner_reasons') && data.partner_reasons?.length > 0 && (
+          <section className="media-section partner-section media-reveal" style={sectionStyle('partner_reasons')}>
             <div>
               <span className="section-eyebrow">The partnership advantage</span>
               <h2>Why brands work with me.</h2>
@@ -254,11 +319,11 @@ export default function MediaKit() {
           </section>
         )}
 
-        {data.testimonials?.length > 0 && (
-          <section className="media-section media-reveal">
+        {!hiddenSections.has('testimonials') && testimonials.length > 0 && (
+          <section className="media-section media-reveal" style={sectionStyle('testimonials')}>
             <SectionIntro eyebrow="Partner notes" title="What brands say." />
             <div className="testimonial-grid">
-              {data.testimonials.map((item, index) => (
+              {testimonials.map((item, index) => (
                 <blockquote key={index}>
                   <p>“{item.quote}”</p>
                   <footer><strong>{item.author || item.brand}</strong>{item.author && <span>{item.brand}</span>}</footer>
@@ -267,6 +332,8 @@ export default function MediaKit() {
             </div>
           </section>
         )}
+
+        </div>
 
         <section className="media-cta media-reveal">
           <div>
@@ -341,11 +408,21 @@ function SectionIntro({ eyebrow, title, body }) {
   )
 }
 
+function CaseMetric({ label, value }) {
+  return <div><span>{label}</span><strong>{value || '—'}</strong></div>
+}
+
 function SocialLink({ social, compact }) {
   const content = (
     <>
       <span className={`social-icon social-${social.platform?.toLowerCase()}`}>{social.platform?.slice(0, 2)}</span>
-      <div><strong>{social.label || social.platform}</strong><small>{social.handle || social.secondary_stat}</small></div>
+      <div>
+        <strong>{social.label || social.platform}{social.live && <span className="social-live-label">Live</span>}</strong>
+        <small>
+          {social.handle || social.secondary_stat}
+          {!compact && social.handle && social.secondary_stat ? ` · ${social.secondary_stat}` : ''}
+        </small>
+      </div>
       {!compact && <em>{social.follower_count ? formatCount(social.follower_count) : '↗'}</em>}
     </>
   )

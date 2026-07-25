@@ -11,6 +11,9 @@ import InvoiceList from './pages/InvoiceList.jsx'
 import BrandDirectory from './pages/BrandDirectory.jsx'
 import BrandDetail from './pages/BrandDetail.jsx'
 import AttentionPage from './pages/AttentionPage.jsx'
+import ContentLibrary from './pages/ContentLibrary.jsx'
+import SocialStats from './pages/SocialStats.jsx'
+import MediaKitPreview from './pages/MediaKitPreview.jsx'
 
 export default function App() {
   return (
@@ -19,12 +22,15 @@ export default function App() {
         <Route path="/" element={<MediaKit />} />
         <Route path="/collab" element={<CollabForm />} />
         <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/media-kit/preview" element={<MediaKitPreview />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
           <Route path="collabs/:collabId" element={<CollabDetail />} />
           <Route path="brands" element={<BrandDirectory />} />
           <Route path="brands/:brandId" element={<BrandDetail />} />
           <Route path="attention" element={<AttentionPage />} />
+          <Route path="content" element={<ContentLibrary />} />
+          <Route path="social-stats" element={<SocialStats />} />
           <Route path="media-kit" element={<MediaKitEditor />} />
           <Route path="invoices" element={<InvoiceList />} />
           <Route path="invoices/new" element={<InvoiceGenerator />} />

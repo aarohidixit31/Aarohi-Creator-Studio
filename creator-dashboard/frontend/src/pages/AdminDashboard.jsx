@@ -40,6 +40,9 @@ export default function AdminDashboard() {
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
+  const [campaignFilter, setCampaignFilter] = useState('all')
+  const [timingFilter, setTimingFilter] = useState('all')
+  const [budgetFilter, setBudgetFilter] = useState('all')
   const [updating, setUpdating] = useState(null)
   const [view, setView] = useState(() => localStorage.getItem('pipeline_view') || 'board')
   const [draggedId, setDraggedId] = useState(null)
@@ -192,13 +195,29 @@ export default function AdminDashboard() {
     const needle = query.trim().toLowerCase()
     return (collabs || []).filter((item) => {
       const matchesFilter = filter === 'all' || item.status === filter
+      const matchesCampaign = campaignFilter === 'all' || item.campaign_type === campaignFilter
+      const deadline = item.deadline ? new Date(item.deadline) : null
+      const daysUntilDeadline = deadline ? (deadline.getTime() - Date.now()) / 86400000 : null
+      const matchesTiming = timingFilter === 'all'
+        || (timingFilter === 'overdue' && daysUntilDeadline != null && daysUntilDeadline < 0)
+        || (timingFilter === 'next_7_days' && daysUntilDeadline != null && daysUntilDeadline >= 0 && daysUntilDeadline <= 7)
+        || (timingFilter === 'no_deadline' && !deadline)
+      const budget = Number(item.budget || 0)
+      const matchesBudget = budgetFilter === 'all'
+        || (budgetFilter === 'with_budget' && budget > 0)
+        || (budgetFilter === 'under_25k' && budget > 0 && budget < 25000)
+        || (budgetFilter === 'over_25k' && budget >= 25000)
       const haystack = [
         item.brand?.name, item.brand?.contact_person, item.brand?.email,
         item.campaign_type, item.deliverables, item.brief,
       ].filter(Boolean).join(' ').toLowerCase()
-      return matchesFilter && (!needle || haystack.includes(needle))
+      return matchesFilter && matchesCampaign && matchesTiming && matchesBudget && (!needle || haystack.includes(needle))
     })
-  }, [collabs, query, filter])
+  }, [collabs, query, filter, campaignFilter, timingFilter, budgetFilter])
+
+  const campaignTypes = useMemo(() => (
+    [...new Set((collabs || []).map((item) => item.campaign_type).filter(Boolean))].sort()
+  ), [collabs])
 
   const brandOptions = useMemo(() => {
     const unique = new Map()
@@ -256,6 +275,29 @@ export default function AdminDashboard() {
               <option value="all">All stages</option>
               {STAGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
+            <select value={campaignFilter} onChange={(e) => setCampaignFilter(e.target.value)}>
+              <option value="all">All campaign types</option>
+              {campaignTypes.map((type) => <option value={type} key={type}>{type}</option>)}
+            </select>
+            <select value={timingFilter} onChange={(e) => setTimingFilter(e.target.value)}>
+              <option value="all">Any deadline</option>
+              <option value="overdue">Deadline overdue</option>
+              <option value="next_7_days">Due in 7 days</option>
+              <option value="no_deadline">No deadline</option>
+            </select>
+            <select value={budgetFilter} onChange={(e) => setBudgetFilter(e.target.value)}>
+              <option value="all">Any budget</option>
+              <option value="with_budget">Budget provided</option>
+              <option value="under_25k">Under ₹25K</option>
+              <option value="over_25k">₹25K and above</option>
+            </select>
+            {(campaignFilter !== 'all' || timingFilter !== 'all' || budgetFilter !== 'all') && (
+              <button className="pipeline-filter-clear" type="button" onClick={() => {
+                setCampaignFilter('all')
+                setTimingFilter('all')
+                setBudgetFilter('all')
+              }}>Clear filters</button>
+            )}
           </div>
         </div>
 
