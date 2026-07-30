@@ -72,7 +72,7 @@ The backend deliberately refuses to boot in production when Postgres, bcrypt aut
 Root directory:
 
 ```text
-backend
+creator-dashboard/backend
 ```
 
 Build:
@@ -89,7 +89,7 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 
 ### Vercel
 
-Use `frontend` as the project root and set:
+Use `creator-dashboard/frontend` as the project root and set:
 
 ```text
 VITE_API_URL=https://your-render-service.onrender.com
