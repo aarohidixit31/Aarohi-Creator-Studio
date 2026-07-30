@@ -47,7 +47,7 @@ npm run build
 Set these values on Render:
 
 - `ENVIRONMENT=production`
-- `DATABASE_URL`: Neon pooled Postgres connection string
+- `DATABASE_URL`: Neon direct Postgres connection string (used by both the app and Alembic)
 - `SECRET_KEY`: random value of at least 32 characters
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD_HASH`: bcrypt hash, never a plain password
@@ -78,13 +78,7 @@ backend
 Build:
 
 ```text
-pip install -r requirements.txt
-```
-
-Pre-deploy:
-
-```text
-alembic upgrade head
+pip install -r requirements.txt && alembic upgrade head
 ```
 
 Start:
