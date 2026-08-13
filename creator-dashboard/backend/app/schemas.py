@@ -242,6 +242,25 @@ class AttentionDashboardOut(BaseModel):
     items: List[AttentionItem] = Field(default_factory=list)
 
 
+# ---------- Manager calendar ----------
+class CalendarEvent(BaseModel):
+    key: str
+    type: str
+    title: str
+    starts_at: datetime
+    brand_name: Optional[str] = None
+    detail: Optional[str] = None
+    status: Optional[str] = None
+    amount: Optional[float] = None
+    href: str
+
+
+class CalendarOut(BaseModel):
+    start: datetime
+    end: datetime
+    events: List[CalendarEvent] = Field(default_factory=list)
+
+
 # ---------- Content history ----------
 class ContentMetrics(BaseModel):
     views: Optional[int] = None

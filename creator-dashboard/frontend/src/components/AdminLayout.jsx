@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 const NAV = [
   { to: '/admin', end: true, label: 'Overview', icon: '01' },
   { to: '/admin/attention', label: 'Needs attention', icon: '!' },
+  { to: '/admin/calendar', label: 'Calendar', icon: 'CAL' },
   { to: '/admin/brands', label: 'Brands', icon: '02' },
   { to: '/admin/content', label: 'Content library', icon: '03' },
   { to: '/admin/social-stats', label: 'Live stats', icon: '04' },

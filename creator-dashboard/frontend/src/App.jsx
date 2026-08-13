@@ -14,6 +14,7 @@ import AttentionPage from './pages/AttentionPage.jsx'
 import ContentLibrary from './pages/ContentLibrary.jsx'
 import SocialStats from './pages/SocialStats.jsx'
 import MediaKitPreview from './pages/MediaKitPreview.jsx'
+import ManagerCalendar from './pages/ManagerCalendar.jsx'
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="brands" element={<BrandDirectory />} />
           <Route path="brands/:brandId" element={<BrandDetail />} />
           <Route path="attention" element={<AttentionPage />} />
+          <Route path="calendar" element={<ManagerCalendar />} />
           <Route path="content" element={<ContentLibrary />} />
           <Route path="social-stats" element={<SocialStats />} />
           <Route path="media-kit" element={<MediaKitEditor />} />
