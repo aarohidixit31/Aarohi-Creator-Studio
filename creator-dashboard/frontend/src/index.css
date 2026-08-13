@@ -327,7 +327,7 @@ img { max-width: 100%; }
 .pipeline-tools select:focus, .status-select:focus { border-color: #7890e8; box-shadow: 0 0 0 3px rgba(41,73,211,.08); }
 .pipeline-filter-clear { background: transparent; border: 0; color: var(--danger); font-size: 9px; font-weight: 700; padding: 0 7px; }
 .pipeline-list { display: grid; }
-.pipeline-row { align-items: center; border-top: 1px solid #edf0f5; display: grid; gap: 14px; grid-template-columns: 42px 1.2fr 1.5fr .75fr 132px; padding: 16px 22px; transition: background .16s, box-shadow .16s; }
+.pipeline-row { align-items: center; border-top: 1px solid #edf0f5; display: grid; gap: 12px; grid-template-columns: 42px 1.2fr 1.5fr .7fr 128px auto 30px; padding: 16px 22px; position: relative; transition: background .16s, box-shadow .16s; }
 .pipeline-row:first-child { border-top: 0; }
 .pipeline-row:hover { background: #f8f9fd; box-shadow: inset 3px 0 var(--accent); }
 .pipeline-row.clickable { cursor: pointer; }
@@ -336,21 +336,34 @@ img { max-width: 100%; }
 .pipeline-brand strong, .pipeline-campaign strong, .pipeline-budget strong { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pipeline-brand span, .pipeline-campaign span, .pipeline-budget span { color: var(--muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-select { font-weight: 700; max-width: 132px; }
+.collab-delete-button { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 7px; color: #9aa2b3; cursor: pointer; display: inline-flex; font-family: var(--font-mono); font-size: 18px; height: 28px; justify-content: center; line-height: 1; padding: 0; transition: background .16s, border-color .16s, color .16s, transform .16s; width: 28px; }
+.collab-delete-button:hover:not(:disabled) { background: #fff0f1; border-color: #f0c9ce; color: var(--danger); transform: scale(1.05); }
+.collab-delete-button:focus-visible { outline: 3px solid rgba(201,49,69,.15); outline-offset: 1px; }
+.collab-delete-button:disabled { cursor: wait; opacity: .55; }
+.collab-archive-button { background: #f4f6fa; border: 1px solid #e0e4ec; border-radius: 7px; color: var(--ink-soft); font-size: 9px; font-weight: 700; padding: 7px 9px; }
+.collab-archive-button:hover:not(:disabled) { background: var(--accent-dim); border-color: #c7d0f3; color: var(--accent); }
 .kanban-scroll { background: #f6f7fb; overflow: visible; padding: 18px; }
-.kanban-board { align-items: start; display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); min-width: 0; }
+.pipeline-phase-tabs { background: #e9edf4; border-radius: 10px; display: grid; gap: 4px; grid-template-columns: repeat(4,minmax(0,1fr)); margin-bottom: 14px; padding: 4px; }
+.pipeline-phase-tabs button { align-items: center; background: transparent; border: 0; border-radius: 7px; color: var(--muted); display: flex; font-size: 10px; font-weight: 700; justify-content: center; min-height: 34px; padding: 0 10px; }
+.pipeline-phase-tabs button.active { background: #fff; box-shadow: 0 3px 9px rgba(23,34,82,.09); color: var(--accent); }
+.pipeline-phase-tabs em { align-items: center; background: rgba(41,73,211,.1); border-radius: 999px; display: inline-flex; font-size: 8px; font-style: normal; height: 18px; justify-content: center; margin-left: 7px; min-width: 18px; padding: 0 5px; }
+.kanban-board { align-items: start; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); min-width: 0; }
 .kanban-column { background: #eef1f6; border: 1px solid transparent; border-radius: 12px; min-height: 220px; min-width: 0; padding: 10px; transition: background .15s, border-color .15s; }
 .kanban-column.drag-over { background: var(--accent-dim); border-color: #9faeea; }
 .kanban-column > header { align-items: center; display: grid; gap: 8px; grid-template-columns: 8px 1fr auto; min-height: 38px; padding: 0 4px 8px; }
 .kanban-column > header strong { font-size: 11px; }
 .kanban-column > header em { align-items: center; background: #fff; border-radius: 999px; color: var(--muted); display: flex; font-size: 9px; font-style: normal; height: 21px; justify-content: center; min-width: 21px; padding: 0 6px; }
 .stage-dot { background: #8993aa; border-radius: 50%; height: 7px; width: 7px; }
-.stage-new_inquiry { background: #e1ba06; }
+.stage-new { background: #e1ba06; }
 .stage-in_discussion { background: #5876e8; }
 .stage-negotiating { background: #a56bd8; }
 .stage-confirmed { background: #1da578; }
-.stage-content_live { background: #df6d36; }
-.stage-invoiced { background: #3274bd; }
-.stage-paid { background: #13855d; }
+.stage-agreement_invoice { background: #3274bd; }
+.stage-script_approved { background: #7a5cc7; }
+.stage-shoot_done { background: #dd7838; }
+.stage-draft_submitted { background: #bc5d9d; }
+.stage-content_posted { background: #1b9c8b; }
+.stage-payment_received { background: #13855d; }
 .stage-closed { background: #7d8597; }
 .kanban-cards { display: grid; gap: 8px; }
 .kanban-card { background: #fff; border: 1px solid #e2e6ee; border-radius: 10px; box-shadow: 0 2px 5px rgba(28,38,73,.035); cursor: pointer; display: grid; gap: 8px; min-width: 0; padding: 12px; transition: box-shadow .16s, opacity .16s, transform .16s; }
@@ -359,9 +372,25 @@ img { max-width: 100%; }
 .kanban-card.dragging { opacity: .42; transform: rotate(2deg); }
 .kanban-card-top { align-items: center; display: flex; justify-content: space-between; }
 .kanban-card-top .brand-avatar { border-radius: 8px; height: 31px; width: 31px; }
-.kanban-card-top > span { color: var(--muted); font-family: var(--font-mono); font-size: 8px; }
+.kanban-card-actions { align-items: center; display: flex; gap: 4px; }
+.kanban-card-actions > span { color: var(--muted); font-family: var(--font-mono); font-size: 8px; }
+.kanban-card-actions .collab-delete-button { height: 24px; width: 24px; }
+.kanban-archive-action { align-items: center; background: transparent; border: 0; border-radius: 5px; color: #8f98aa; display: inline-flex; font-size: 12px; height: 23px; justify-content: center; padding: 0; width: 23px; }
+.kanban-archive-action:hover { background: var(--accent-dim); color: var(--accent); }
+.priority-dot { border-radius: 50%; display: inline-block; height: 7px; width: 7px; }
+.priority-low { background: #96a0b4; }
+.priority-normal { background: #5876e8; }
+.priority-high { background: #e29c21; }
+.priority-urgent { background: #d54455; box-shadow: 0 0 0 3px rgba(213,68,85,.12); }
 .kanban-card > strong { font-size: 12px; }
 .kanban-card > p { color: var(--ink-soft); display: -webkit-box; font-size: 10px; line-height: 1.45; margin: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.kanban-command-row { color: var(--muted); display: flex; font-size: 8px; justify-content: space-between; }
+.kanban-next-action { background: #f7f8fc; border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0; color: var(--ink-soft); display: grid; font-size: 9px; gap: 2px; line-height: 1.35; padding: 7px 8px; }
+.kanban-next-action b { color: var(--accent); font-family: var(--font-mono); font-size: 7px; letter-spacing: .07em; text-transform: uppercase; }
+.kanban-record-flags { display: flex; flex-wrap: wrap; gap: 4px; }
+.kanban-record-flags span { background: #f1f3f7; border-radius: 999px; color: #81899a; font-size: 7px; font-weight: 700; padding: 4px 6px; }
+.kanban-record-flags span.complete { background: #e8f7f1; color: #137253; }
+.kanban-record-flags span.waiting { background: var(--warn-dim); color: #786c0d; }
 .kanban-card-meta { align-items: center; border-top: 1px solid #eff1f5; display: flex; justify-content: space-between; padding-top: 8px; }
 .kanban-card-meta span { color: var(--accent); font-family: var(--font-mono); font-size: 9px; font-weight: 700; }
 .kanban-card-meta time { color: var(--muted); font-size: 9px; }
@@ -1160,9 +1189,9 @@ img { max-width: 100%; }
 .brand-history-row:last-child { border-bottom: 0; }
 .brand-history-row:hover { background: #fafbfe; }
 .brand-history-status { background: #aab0be; border-radius: 99px; height: 8px; width: 8px; }
-.brand-history-status.status-confirmed, .brand-history-status.status-content_live { background: var(--success); box-shadow: 0 0 0 4px rgba(22,131,95,.1); }
-.brand-history-status.status-new_inquiry, .brand-history-status.status-in_discussion { background: var(--accent); box-shadow: 0 0 0 4px rgba(41,73,211,.1); }
-.brand-history-status.status-negotiating, .brand-history-status.status-invoiced { background: #d4ae00; box-shadow: 0 0 0 4px rgba(244,213,41,.18); }
+.brand-history-status.status-confirmed, .brand-history-status.status-content_posted, .brand-history-status.status-payment_received { background: var(--success); box-shadow: 0 0 0 4px rgba(22,131,95,.1); }
+.brand-history-status.status-new, .brand-history-status.status-in_discussion { background: var(--accent); box-shadow: 0 0 0 4px rgba(41,73,211,.1); }
+.brand-history-status.status-negotiating, .brand-history-status.status-agreement_invoice, .brand-history-status.status-script_approved, .brand-history-status.status-shoot_done, .brand-history-status.status-draft_submitted { background: #d4ae00; box-shadow: 0 0 0 4px rgba(244,213,41,.18); }
 .brand-history-row > div { min-width: 0; }
 .brand-history-row > div > strong { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand-history-row p { color: var(--muted); font-size: 10px; margin: 4px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1171,9 +1200,9 @@ img { max-width: 100%; }
 .brand-history-budget span { color: var(--muted); display: block; font-size: 9px; margin-top: 4px; }
 .brand-history-row > i { color: #abb1be; font-style: normal; }
 .status-pill { border-radius: 99px; font-size: 8px; font-weight: 800; padding: 6px 8px; text-transform: uppercase; white-space: nowrap; }
-.status-pill.status-new_inquiry, .status-pill.status-in_discussion { background: var(--accent-dim); color: var(--accent); }
-.status-pill.status-negotiating, .status-pill.status-invoiced, .status-pill.invoice-sent { background: var(--warn-dim); color: #786c0d; }
-.status-pill.status-confirmed, .status-pill.status-content_live, .status-pill.status-paid, .status-pill.invoice-paid { background: #e8f7f1; color: #137253; }
+.status-pill.status-new, .status-pill.status-in_discussion { background: var(--accent-dim); color: var(--accent); }
+.status-pill.status-negotiating, .status-pill.status-agreement_invoice, .status-pill.status-script_approved, .status-pill.status-shoot_done, .status-pill.status-draft_submitted, .status-pill.invoice-sent { background: var(--warn-dim); color: #786c0d; }
+.status-pill.status-confirmed, .status-pill.status-content_posted, .status-pill.status-payment_received, .status-pill.invoice-paid { background: #e8f7f1; color: #137253; }
 .status-pill.status-closed, .status-pill.invoice-draft { background: #f0f2f5; color: #687083; }
 .status-pill.invoice-overdue { background: #fff0f1; color: var(--danger); }
 .brand-invoice-list { display: grid; }
@@ -1206,8 +1235,8 @@ img { max-width: 100%; }
   .ledger-grid { grid-template-columns: repeat(2,1fr); }
   .invoice-builder-layout { grid-template-columns: 1fr; }
   .invoice-preview-card { position: static; }
-  .pipeline-row { grid-template-columns: 42px 1fr 1fr 125px; }
-  .kanban-board { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .pipeline-row { grid-template-columns: 42px 1fr 1fr 125px auto 30px; }
+  .kanban-board { grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); }
   .pipeline-budget { display: none; }
   .media-hero { grid-template-columns: 1fr; padding-top: 70px; }
   .media-hero-visual { margin: 35px auto 0; width: min(100%, 520px); }
@@ -1283,9 +1312,13 @@ img { max-width: 100%; }
   .view-toggle { align-self: flex-start; }
   .search-box { min-width: 0; }
   .pipeline-row { grid-template-columns: 38px 1fr; }
+  .pipeline-row > .collab-delete-button { position: absolute; right: 13px; top: 13px; }
+  .pipeline-row > .collab-archive-button { grid-column: 2; justify-self: start; }
+  .pipeline-brand { padding-right: 34px; }
   .pipeline-campaign, .pipeline-budget { display: none; }
   .status-select { grid-column: 2; max-width: none; width: 100%; }
   .kanban-scroll { margin: 0 -1px; padding: 12px; }
+  .pipeline-phase-tabs { grid-template-columns: repeat(2,1fr); }
   .kanban-board { grid-template-columns: 1fr; }
   .kanban-column { min-height: 150px; }
   .admin-modal-backdrop { padding: 0; }

@@ -6,30 +6,43 @@ import { Button, Feedback, FormField, SegmentedControl } from '../components/ui.
 import AttentionQueue from '../components/AttentionQueue.jsx'
 
 const STAGES = [
-  ['new_inquiry', 'New inquiry'],
+  ['new', 'New'],
   ['in_discussion', 'In discussion'],
   ['negotiating', 'Negotiating'],
   ['confirmed', 'Confirmed'],
-  ['content_live', 'Content live'],
-  ['invoiced', 'Invoiced'],
-  ['paid', 'Paid'],
+  ['agreement_invoice', 'Agreement & Invoice'],
+  ['script_approved', 'Script Approved'],
+  ['shoot_done', 'Shoot Done'],
+  ['draft_submitted', 'Draft Submitted'],
+  ['content_posted', 'Content Posted'],
+  ['payment_received', 'Payment Received'],
   ['closed', 'Closed'],
 ]
 
-const ACTIVE_STAGES = new Set(['new_inquiry', 'in_discussion', 'negotiating', 'confirmed', 'content_live', 'invoiced'])
+const ACTIVE_STAGES = new Set(STAGES.map(([value]) => value).filter((value) => !['payment_received', 'closed'].includes(value)))
+const PHASES = [
+  ['sales', 'Sales', ['new', 'in_discussion', 'negotiating']],
+  ['onboarding', 'Onboarding', ['confirmed', 'agreement_invoice']],
+  ['production', 'Production', ['script_approved', 'shoot_done', 'draft_submitted']],
+  ['completion', 'Completion', ['content_posted', 'payment_received', 'closed']],
+]
 const EMPTY_COLLAB = {
   brand_id: '',
   brand_name: '',
   contact_person: '',
   email: '',
   phone: '',
-  status: 'new_inquiry',
+  status: 'new',
   campaign_type: '',
   deliverables: '',
   budget: '',
   deadline: '',
   brief: '',
   notes: '',
+  priority: 'normal',
+  assignee: 'unassigned',
+  waiting_on: 'none',
+  next_action: '',
 }
 
 export default function AdminDashboard() {
@@ -43,7 +56,13 @@ export default function AdminDashboard() {
   const [campaignFilter, setCampaignFilter] = useState('all')
   const [timingFilter, setTimingFilter] = useState('all')
   const [budgetFilter, setBudgetFilter] = useState('all')
+  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [assigneeFilter, setAssigneeFilter] = useState('all')
   const [updating, setUpdating] = useState(null)
+  const [deleting, setDeleting] = useState(null)
+  const [archiving, setArchiving] = useState(null)
+  const [pipelineScope, setPipelineScope] = useState('active')
+  const [phase, setPhase] = useState(() => localStorage.getItem('pipeline_phase') || 'sales')
   const [view, setView] = useState(() => localStorage.getItem('pipeline_view') || 'board')
   const [draggedId, setDraggedId] = useState(null)
   const [dropStage, setDropStage] = useState(null)
@@ -83,9 +102,9 @@ export default function AdminDashboard() {
     }
   }, [showCreate, creating])
 
-  function load() {
+  function load(scope = pipelineScope) {
     setError('')
-    authFetch('/api/collabs/')
+    authFetch(`/api/collabs/?archived=${scope === 'archived'}`)
       .then((response) => {
         if (!response.ok) throw new Error('Could not load collaborations')
         return response.json()
@@ -113,6 +132,52 @@ export default function AdminDashboard() {
     } finally {
       setUpdating(null)
     }
+  }
+
+  async function deleteCollaboration(collab) {
+    const brandName = collab.brand?.name || `Collaboration #${collab.id}`
+    if (!window.confirm(`Remove ${brandName} from the collaboration pipeline?\n\nInvoices, content records and the brand profile will be kept.`)) return
+
+    setDeleting(collab.id)
+    setError('')
+    try {
+      const response = await authFetch(`/api/collabs/${collab.id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        throw new Error(body?.detail || 'Could not delete collaboration')
+      }
+      setCollabs((current) => current?.filter((item) => item.id !== collab.id))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  async function toggleArchive(collab) {
+    const restoring = pipelineScope === 'archived'
+    setArchiving(collab.id)
+    setError('')
+    try {
+      const response = await authFetch(`/api/collabs/${collab.id}/archive?archived=${!restoring}`, { method: 'PATCH' })
+      if (!response.ok) throw new Error(restoring ? 'Could not restore collaboration' : 'Could not archive collaboration')
+      setCollabs((current) => current?.filter((item) => item.id !== collab.id))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setArchiving(null)
+    }
+  }
+
+  function changeScope(scope) {
+    setPipelineScope(scope)
+    setCollabs(null)
+    load(scope)
+  }
+
+  function changePhase(nextPhase) {
+    setPhase(nextPhase)
+    localStorage.setItem('pipeline_phase', nextPhase)
   }
 
   function changeView(nextView) {
@@ -183,7 +248,7 @@ export default function AdminDashboard() {
     const list = collabs || []
     return {
       total: list.length,
-      newCount: list.filter((item) => item.status === 'new_inquiry').length,
+      newCount: list.filter((item) => item.status === 'new').length,
       active: list.filter((item) => ACTIVE_STAGES.has(item.status)).length,
       pipeline: list
         .filter((item) => ACTIVE_STAGES.has(item.status))
@@ -207,13 +272,19 @@ export default function AdminDashboard() {
         || (budgetFilter === 'with_budget' && budget > 0)
         || (budgetFilter === 'under_25k' && budget > 0 && budget < 25000)
         || (budgetFilter === 'over_25k' && budget >= 25000)
+      const matchesPriority = priorityFilter === 'all' || item.priority === priorityFilter
+      const matchesAssignee = assigneeFilter === 'all' || item.assignee === assigneeFilter
       const haystack = [
         item.brand?.name, item.brand?.contact_person, item.brand?.email,
-        item.campaign_type, item.deliverables, item.brief,
+        item.campaign_type, item.deliverables, item.brief, item.next_action,
       ].filter(Boolean).join(' ').toLowerCase()
-      return matchesFilter && matchesCampaign && matchesTiming && matchesBudget && (!needle || haystack.includes(needle))
+      return matchesFilter && matchesCampaign && matchesTiming && matchesBudget && matchesPriority && matchesAssignee && (!needle || haystack.includes(needle))
     })
-  }, [collabs, query, filter, campaignFilter, timingFilter, budgetFilter])
+  }, [collabs, query, filter, campaignFilter, timingFilter, budgetFilter, priorityFilter, assigneeFilter])
+
+  const visibleBoardStages = useMemo(() => (
+    PHASES.find(([value]) => value === phase)?.[2] || PHASES[0][2]
+  ), [phase])
 
   const campaignTypes = useMemo(() => (
     [...new Set((collabs || []).map((item) => item.campaign_type).filter(Boolean))].sort()
@@ -246,8 +317,8 @@ export default function AdminDashboard() {
       {error && <div className="admin-notice error">{error}</div>}
 
       <section className="metric-grid">
-        <MetricCard label="Total inquiries" value={stats.total} note="All time" tone="blue" />
-        <MetricCard label="Needs response" value={stats.newCount} note="New inquiries" tone="yellow" />
+        <MetricCard label="Total collaborations" value={stats.total} note="All records" tone="blue" />
+        <MetricCard label="Needs response" value={stats.newCount} note="New collaborations" tone="yellow" />
         <MetricCard label="Active collabs" value={stats.active} note="Currently in pipeline" />
         <MetricCard label="Pipeline value" value={money(stats.pipeline)} note="Based on shared budgets" />
       </section>
@@ -258,9 +329,15 @@ export default function AdminDashboard() {
         <div className="manager-card-header">
           <div>
             <span className="summary-kicker">Collaborations</span>
-            <h2>Inquiry pipeline</h2>
+            <h2>Collaboration pipeline</h2>
           </div>
           <div className="pipeline-tools">
+            <SegmentedControl
+              value={pipelineScope}
+              onChange={changeScope}
+              label="Pipeline records"
+              options={[{ value: 'active', label: 'Active' }, { value: 'archived', label: 'Archive' }]}
+            />
             <SegmentedControl
               value={view}
               onChange={changeView}
@@ -291,11 +368,21 @@ export default function AdminDashboard() {
               <option value="under_25k">Under ₹25K</option>
               <option value="over_25k">₹25K and above</option>
             </select>
-            {(campaignFilter !== 'all' || timingFilter !== 'all' || budgetFilter !== 'all') && (
+            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+              <option value="all">Any priority</option>
+              <option value="urgent">Urgent</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option>
+            </select>
+            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
+              <option value="all">Anyone</option>
+              <option value="aarohi">Aarohi</option><option value="manager">Manager</option><option value="unassigned">Unassigned</option>
+            </select>
+            {(campaignFilter !== 'all' || timingFilter !== 'all' || budgetFilter !== 'all' || priorityFilter !== 'all' || assigneeFilter !== 'all') && (
               <button className="pipeline-filter-clear" type="button" onClick={() => {
                 setCampaignFilter('all')
                 setTimingFilter('all')
                 setBudgetFilter('all')
+                setPriorityFilter('all')
+                setAssigneeFilter('all')
               }}>Clear filters</button>
             )}
           </div>
@@ -322,7 +409,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="pipeline-campaign">
                   <strong>{collab.campaign_type || 'General collaboration'}</strong>
-                  <span>{collab.deliverables || collab.brief || 'No deliverables added'}</span>
+                  <span>{collab.next_action || collab.deliverables || collab.brief || 'No next action added'}</span>
                 </div>
                 <div className="pipeline-budget">
                   <span>Budget</span>
@@ -338,6 +425,21 @@ export default function AdminDashboard() {
                 >
                   {STAGES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
+                <button className="collab-archive-button" type="button" disabled={archiving === collab.id} onClick={(event) => {
+                  event.stopPropagation()
+                  toggleArchive(collab)
+                }}>{pipelineScope === 'archived' ? 'Restore' : 'Archive'}</button>
+                <button
+                  className="collab-delete-button"
+                  type="button"
+                  disabled={deleting === collab.id}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    deleteCollaboration(collab)
+                  }}
+                  aria-label={`Delete collaboration with ${collab.brand?.name || 'brand'}`}
+                  title="Remove collaboration"
+                >{deleting === collab.id ? '...' : '\u00d7'}</button>
               </article>
             ))}
           </div>
@@ -345,8 +447,15 @@ export default function AdminDashboard() {
 
         {filtered.length > 0 && view === 'board' && (
           <div className="kanban-scroll">
+            <div className="pipeline-phase-tabs">
+              {PHASES.map(([value, label, stages]) => (
+                <button type="button" className={phase === value ? 'active' : ''} key={value} onClick={() => changePhase(value)}>
+                  <span>{label}</span><em>{filtered.filter((item) => stages.includes(item.status)).length}</em>
+                </button>
+              ))}
+            </div>
             <div className="kanban-board">
-              {STAGES.map(([stage, label]) => {
+              {STAGES.filter(([stage]) => visibleBoardStages.includes(stage)).map(([stage, label]) => {
                 const cards = filtered.filter((collab) => collab.status === stage)
                 return (
                   <section
@@ -390,10 +499,40 @@ export default function AdminDashboard() {
                         >
                           <div className="kanban-card-top">
                             <div className="brand-avatar">{initials(collab.brand?.name || 'Brand')}</div>
-                            <span>#{collab.id}</span>
+                            <div className="kanban-card-actions">
+                              <span className={`priority-dot priority-${collab.priority}`} title={`${collab.priority || 'normal'} priority`} />
+                              <span>#{collab.id}</span>
+                              <button className="kanban-archive-action" type="button" draggable="false" disabled={archiving === collab.id} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => {
+                                event.stopPropagation()
+                                toggleArchive(collab)
+                              }}>{pipelineScope === 'archived' ? '↩' : '□'}</button>
+                              <button
+                                className="collab-delete-button"
+                                type="button"
+                                draggable="false"
+                                disabled={deleting === collab.id}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  deleteCollaboration(collab)
+                                }}
+                                aria-label={`Delete collaboration with ${collab.brand?.name || 'brand'}`}
+                                title="Remove collaboration"
+                              >{deleting === collab.id ? '...' : '\u00d7'}</button>
+                            </div>
                           </div>
                           <strong>{collab.brand?.name || `Brand #${collab.brand_id}`}</strong>
                           <p>{collab.campaign_type || collab.deliverables || 'General collaboration'}</p>
+                          <div className="kanban-command-row">
+                            <span>{assigneeLabel(collab.assignee)}</span>
+                            <span>{daysInStage(collab.stage_entered_at)}d in stage</span>
+                          </div>
+                          {collab.next_action && <div className="kanban-next-action"><b>Next</b>{collab.next_action}</div>}
+                          <div className="kanban-record-flags">
+                            <span className={collab.has_agreement ? 'complete' : ''}>{collab.has_agreement ? '✓' : '·'} Agreement</span>
+                            <span className={collab.invoice_count ? 'complete' : ''}>{collab.invoice_count ? '✓' : '·'} Invoice</span>
+                            {collab.waiting_on !== 'none' && <span className="waiting">Waiting: {assigneeLabel(collab.waiting_on)}</span>}
+                          </div>
                           <div className="kanban-card-meta">
                             <span>{collab.budget ? money(collab.budget) : 'Budget not shared'}</span>
                             {collab.deadline && <time>{shortDate(collab.deadline)}</time>}
@@ -488,7 +627,20 @@ export default function AdminDashboard() {
                   <FormField label="Deadline">
                     <input type="date" value={createForm.deadline} onChange={(event) => patchCreate('deadline', event.target.value)} />
                   </FormField>
+                  <FormField label="Priority">
+                    <select value={createForm.priority} onChange={(event) => patchCreate('priority', event.target.value)}>
+                      <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option>
+                    </select>
+                  </FormField>
+                  <FormField label="Assigned to">
+                    <select value={createForm.assignee} onChange={(event) => patchCreate('assignee', event.target.value)}>
+                      <option value="unassigned">Unassigned</option><option value="aarohi">Aarohi</option><option value="manager">Manager</option>
+                    </select>
+                  </FormField>
                 </div>
+                <FormField label="Next action">
+                  <input value={createForm.next_action} onChange={(event) => patchCreate('next_action', event.target.value)} placeholder="e.g. Send revised commercial proposal" />
+                </FormField>
                 <FormField label="Deliverables">
                   <textarea rows="3" value={createForm.deliverables} onChange={(event) => patchCreate('deliverables', event.target.value)} placeholder="e.g. 1 Reel + 2 Stories" />
                 </FormField>
@@ -535,4 +687,16 @@ function money(value) {
 
 function shortDate(value) {
   return new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+
+function daysInStage(value) {
+  if (!value) return 0
+  return Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86400000))
+}
+
+function assigneeLabel(value) {
+  if (value === 'aarohi') return 'Aarohi'
+  if (value === 'manager') return 'Manager'
+  if (value === 'brand') return 'Brand'
+  return 'Unassigned'
 }

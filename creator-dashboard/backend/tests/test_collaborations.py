@@ -48,23 +48,80 @@ def test_admin_can_create_and_manage_collaboration(client, seed_brand):
             {"text": "Publish reel", "completed": False},
         ],
         "notes": "Brand prefers concise technical demos.",
+        "priority": "high",
+        "assignee": "manager",
+        "waiting_on": "brand",
+        "next_action": "Get the final script approved",
     })
     assert updated.status_code == 200
     assert len(updated.json()["deliverable_checklist"]) == 2
     assert updated.json()["notes"].startswith("Brand prefers")
+    assert updated.json()["priority"] == "high"
+    assert updated.json()["assignee"] == "manager"
+    assert updated.json()["waiting_on"] == "brand"
+    assert updated.json()["next_action"] == "Get the final script approved"
 
-    moved = client.patch(f"/api/collabs/{collab_id}/status", json={"status": "content_live"})
+    moved = client.patch(f"/api/collabs/{collab_id}/status", json={"status": "content_posted"})
     assert moved.status_code == 200
     detail = client.get(f"/api/collabs/{collab_id}")
-    assert detail.json()["status"] == "content_live"
+    assert detail.json()["status"] == "content_posted"
     assert any(event["action"] == "status_changed" for event in detail.json()["activity_log"])
+
+
+def test_admin_can_archive_and_restore_collaboration(client, seed_brand):
+    collab = client.post("/api/collabs/", json={
+        "brand_id": seed_brand.id,
+        "campaign_type": "Archive test",
+    }).json()
+
+    archived = client.patch(f"/api/collabs/{collab['id']}/archive?archived=true")
+    assert archived.status_code == 200
+    assert all(item["id"] != collab["id"] for item in client.get("/api/collabs/").json())
+    archived_list = client.get("/api/collabs/?archived=true").json()
+    assert any(item["id"] == collab["id"] for item in archived_list)
+
+    restored = client.patch(f"/api/collabs/{collab['id']}/archive?archived=false")
+    assert restored.status_code == 200
+    assert any(item["id"] == collab["id"] for item in client.get("/api/collabs/").json())
+
+
+def test_admin_can_delete_collaboration_without_deleting_history(client, db, seed_brand):
+    collab = client.post("/api/collabs/", json={
+        "brand_id": seed_brand.id,
+        "campaign_type": "Launch Reel",
+    }).json()
+    invoice = models.Invoice(
+        brand_id=seed_brand.id,
+        collab_id=collab["id"],
+        invoice_number="INV-DELETE-TEST",
+        line_items=[{"description": "Reel", "quantity": 1, "rate": 10000}],
+        subtotal=10000,
+        total=10000,
+    )
+    content = models.ContentItem(
+        brand_id=seed_brand.id,
+        collab_id=collab["id"],
+        platform="Instagram",
+        title="Launch Reel",
+    )
+    db.add_all([invoice, content])
+    db.commit()
+
+    deleted = client.delete(f"/api/collabs/{collab['id']}")
+
+    assert deleted.status_code == 200
+    assert db.get(models.Collab, collab["id"]) is None
+    assert db.get(models.Brand, seed_brand.id) is not None
+    assert db.query(models.Invoice).filter_by(invoice_number="INV-DELETE-TEST").one().collab_id is None
+    assert db.query(models.ContentItem).filter_by(title="Launch Reel").one().collab_id is None
+    assert client.delete(f"/api/collabs/{collab['id']}").status_code == 404
 
 
 def test_attention_queue_combines_followups_deadlines_and_payments(client, seed_brand):
     past = datetime.now(timezone.utc) - timedelta(days=2)
     collab = client.post("/api/collabs/", json={
         "brand_id": seed_brand.id,
-        "status": "new_inquiry",
+        "status": "new",
         "campaign_type": "Launch Reel",
         "deadline": past.isoformat(),
     }).json()

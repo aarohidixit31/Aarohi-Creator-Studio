@@ -4,13 +4,16 @@ import { authFetch } from '../api.js'
 import { Button, FormField } from '../components/ui.jsx'
 
 const STAGES = [
-  ['new_inquiry', 'New inquiry'],
+  ['new', 'New'],
   ['in_discussion', 'In discussion'],
   ['negotiating', 'Negotiating'],
   ['confirmed', 'Confirmed'],
-  ['content_live', 'Content live'],
-  ['invoiced', 'Invoiced'],
-  ['paid', 'Paid'],
+  ['agreement_invoice', 'Agreement & Invoice'],
+  ['script_approved', 'Script Approved'],
+  ['shoot_done', 'Shoot Done'],
+  ['draft_submitted', 'Draft Submitted'],
+  ['content_posted', 'Content Posted'],
+  ['payment_received', 'Payment Received'],
   ['closed', 'Closed'],
 ]
 
@@ -166,7 +169,7 @@ export default function CollabDetail() {
       <div className="detail-summary-grid">
         <SummaryCard label="Budget" value={form.budget ? money(form.budget) : 'Not shared'} />
         <SummaryCard label="Campaign deadline" value={form.deadline ? formatDate(form.deadline) : 'Not scheduled'} />
-        <SummaryCard label="Next follow-up" value={form.follow_up_at ? formatDate(form.follow_up_at) : 'Not scheduled'} tone={!form.follow_up_at ? 'yellow' : ''} />
+        <SummaryCard label="Days in stage" value={`${daysInStage(form.stage_entered_at)} days`} tone={daysInStage(form.stage_entered_at) > 7 ? 'yellow' : ''} />
         <SummaryCard label="Deliverables complete" value={`${checklistProgress}%`} tone={checklistProgress === 100 ? 'green' : ''} />
       </div>
 
@@ -190,7 +193,23 @@ export default function CollabDetail() {
                   <Field label="Budget (INR)"><input type="number" min="0" value={form.budget ?? ''} onChange={(event) => patch('budget', event.target.value)} /></Field>
                   <Field label="Campaign deadline"><input type="date" value={dateInput(form.deadline)} onChange={(event) => patch('deadline', event.target.value)} /></Field>
                   <Field label="Next follow-up"><input type="datetime-local" value={dateTimeInput(form.follow_up_at)} onChange={(event) => patch('follow_up_at', event.target.value)} /></Field>
+                  <Field label="Priority">
+                    <select value={form.priority} onChange={(event) => patch('priority', event.target.value)}>
+                      <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option>
+                    </select>
+                  </Field>
+                  <Field label="Assigned to">
+                    <select value={form.assignee} onChange={(event) => patch('assignee', event.target.value)}>
+                      <option value="unassigned">Unassigned</option><option value="aarohi">Aarohi</option><option value="manager">Manager</option>
+                    </select>
+                  </Field>
+                  <Field label="Waiting on">
+                    <select value={form.waiting_on} onChange={(event) => patch('waiting_on', event.target.value)}>
+                      <option value="none">No one</option><option value="brand">Brand</option><option value="aarohi">Aarohi</option><option value="manager">Manager</option>
+                    </select>
+                  </Field>
                 </div>
+                <Field label="Next action"><input value={form.next_action || ''} onChange={(event) => patch('next_action', event.target.value)} placeholder="What should happen next?" /></Field>
                 <Field label="Deliverables"><textarea rows="3" value={form.deliverables || ''} onChange={(event) => patch('deliverables', event.target.value)} /></Field>
                 <Field label="Campaign brief"><textarea rows="6" value={form.brief || ''} onChange={(event) => patch('brief', event.target.value)} /></Field>
               </DetailSection>
@@ -318,6 +337,10 @@ function normalize(data) {
     resource_links: data.resource_links || [],
     performance_metrics: data.performance_metrics || [],
     activity_log: data.activity_log || [],
+    priority: data.priority || 'normal',
+    assignee: data.assignee || 'unassigned',
+    waiting_on: data.waiting_on || 'none',
+    next_action: data.next_action || '',
   }
 }
 
@@ -339,6 +362,10 @@ function toPayload(form) {
     deliverable_checklist: form.deliverable_checklist.filter((item) => item.text.trim()),
     resource_links: form.resource_links.filter((item) => item.label.trim() && item.url.trim()),
     performance_metrics: form.performance_metrics.filter((item) => item.label.trim() && item.value.trim()),
+    priority: form.priority,
+    assignee: form.assignee,
+    waiting_on: form.waiting_on,
+    next_action: form.next_action || null,
   }
 }
 
@@ -399,4 +426,9 @@ function activityTitle(event) {
   if (event.action === 'inquiry_received') return 'Inquiry received'
   if (event.action === 'collaboration_added') return 'Collaboration added'
   return 'Workspace updated'
+}
+
+function daysInStage(value) {
+  if (!value) return 0
+  return Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86400000))
 }

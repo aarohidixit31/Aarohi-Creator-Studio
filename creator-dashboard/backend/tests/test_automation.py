@@ -25,7 +25,7 @@ def test_daily_automation_sends_due_invoice_and_manager_digest(
 
     collab_data = client.post("/api/collabs/", json={
         "brand_id": seed_brand.id,
-        "status": "new_inquiry",
+        "status": "new",
         "campaign_type": "Instagram Reel",
     }).json()
     collab = db.query(models.Collab).filter(models.Collab.id == collab_data["id"]).first()

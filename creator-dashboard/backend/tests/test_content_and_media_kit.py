@@ -60,7 +60,7 @@ def test_media_kit_draft_preview_publish_and_visibility(client):
 def test_content_crud_summary_and_public_case_study(client, seed_brand):
     collab = client.post("/api/collabs/", json={
         "brand_id": seed_brand.id,
-        "status": "content_live",
+        "status": "content_posted",
         "campaign_type": "Instagram Reel",
     }).json()
     created = client.post("/api/content/", json={

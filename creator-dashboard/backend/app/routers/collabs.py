@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import models, schemas
 from ..auth import get_current_admin
@@ -13,15 +13,21 @@ from ..services.email import email_is_configured, send_inquiry_notifications
 router = APIRouter(prefix="/api/collabs", tags=["collabs"])
 
 VALID_STATUSES = [
-    "new_inquiry",
+    "new",
     "in_discussion",
     "negotiating",
     "confirmed",
-    "content_live",
-    "invoiced",
-    "paid",
+    "agreement_invoice",
+    "script_approved",
+    "shoot_done",
+    "draft_submitted",
+    "content_posted",
+    "payment_received",
     "closed",
 ]
+VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
+VALID_ASSIGNEES = {"unassigned", "aarohi", "manager"}
+VALID_WAITING_ON = {"none", "brand", "aarohi", "manager"}
 
 
 def _activity(
@@ -41,6 +47,14 @@ def _activity(
 
 def _detail_payload(collab: models.Collab) -> dict:
     details = collab.details or {}
+    activity_log = details.get("activity_log") or []
+    stage_entered_at = collab.created_at
+    for event in reversed(activity_log):
+        if event.get("action") == "status_changed" and event.get("timestamp"):
+            stage_entered_at = event["timestamp"]
+            break
+    resources = details.get("resource_links") or []
+    invoices = collab.invoices or []
     return {
         "id": collab.id,
         "brand_id": collab.brand_id,
@@ -56,9 +70,21 @@ def _detail_payload(collab: models.Collab) -> dict:
         "created_at": collab.created_at,
         "follow_up_at": details.get("follow_up_at"),
         "deliverable_checklist": details.get("deliverable_checklist") or [],
-        "resource_links": details.get("resource_links") or [],
+        "resource_links": resources,
         "performance_metrics": details.get("performance_metrics") or [],
-        "activity_log": details.get("activity_log") or [],
+        "activity_log": activity_log,
+        "priority": details.get("priority") or "normal",
+        "assignee": details.get("assignee") or "unassigned",
+        "waiting_on": details.get("waiting_on") or "none",
+        "next_action": details.get("next_action"),
+        "stage_entered_at": stage_entered_at,
+        "archived_at": collab.archived_at,
+        "has_agreement": any(
+            str(item.get("kind") or "").casefold() in {"contract", "agreement"}
+            for item in resources if isinstance(item, dict)
+        ),
+        "invoice_count": len(invoices),
+        "paid_invoice_count": sum(invoice.status == "paid" for invoice in invoices),
     }
 
 
@@ -84,20 +110,21 @@ def attention_dashboard(
     now = datetime.now(timezone.utc)
     soon = now + timedelta(days=7)
     active_statuses = {
-        "new_inquiry", "in_discussion", "negotiating", "confirmed", "content_live", "invoiced"
+        "new", "in_discussion", "negotiating", "confirmed", "agreement_invoice",
+        "script_approved", "shoot_done", "draft_submitted", "content_posted",
     }
     items = []
 
     collabs = (
         db.query(models.Collab)
         .options(joinedload(models.Collab.brand))
-        .filter(models.Collab.status.in_(active_statuses))
+        .filter(models.Collab.status.in_(active_statuses), models.Collab.archived_at.is_(None))
         .all()
     )
     for collab in collabs:
         brand_name = collab.brand.name if collab.brand else f"Brand #{collab.brand_id}"
         created_at = _utc(collab.created_at) or now
-        if collab.status == "new_inquiry":
+        if collab.status == "new":
             age = now - created_at
             items.append({
                 "key": f"inquiry-{collab.id}",
@@ -225,7 +252,7 @@ def submit_collab_inquiry(
         _activity(
             "inquiry_received",
             f"Inquiry received from {payload.brand_name}",
-            to_status="new_inquiry",
+            to_status="new",
         )
     ]
     if brand_reused:
@@ -238,7 +265,7 @@ def submit_collab_inquiry(
 
     collab = models.Collab(
         brand_id=brand.id,
-        status="new_inquiry",
+        status="new",
         deliverables=payload.deliverables,
         budget=payload.budget,
         campaign_type=payload.campaign_type,
@@ -275,6 +302,12 @@ def create_admin_collaboration(
     """Create a collaboration directly from the private manager workspace."""
     if payload.status not in VALID_STATUSES:
         raise HTTPException(400, f"Status must be one of {VALID_STATUSES}")
+    if payload.priority not in VALID_PRIORITIES:
+        raise HTTPException(400, f"Priority must be one of {sorted(VALID_PRIORITIES)}")
+    if payload.assignee not in VALID_ASSIGNEES:
+        raise HTTPException(400, f"Assignee must be one of {sorted(VALID_ASSIGNEES)}")
+    if payload.waiting_on not in VALID_WAITING_ON:
+        raise HTTPException(400, f"Waiting on must be one of {sorted(VALID_WAITING_ON)}")
 
     brand = None
     brand_reused = False
@@ -333,7 +366,13 @@ def create_admin_collaboration(
         deadline=payload.deadline,
         brief=payload.brief,
         notes=payload.notes,
-        details={"activity_log": activity_log},
+        details={
+            "activity_log": activity_log,
+            "priority": payload.priority,
+            "assignee": payload.assignee,
+            "waiting_on": payload.waiting_on,
+            "next_action": payload.next_action,
+        },
     )
     db.add(collab)
     db.commit()
@@ -345,14 +384,20 @@ def create_admin_collaboration(
 @router.get("/", response_model=List[schemas.CollabOut])
 def list_collabs(
     status: Optional[str] = None,
+    archived: bool = False,
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin),
 ):
     """Admin-only CRM pipeline view."""
-    query = db.query(models.Collab).options(joinedload(models.Collab.brand))
+    query = db.query(models.Collab).options(
+        joinedload(models.Collab.brand), selectinload(models.Collab.invoices)
+    )
+    query = query.filter(
+        models.Collab.archived_at.is_not(None) if archived else models.Collab.archived_at.is_(None)
+    )
     if status:
         query = query.filter(models.Collab.status == status)
-    return query.order_by(models.Collab.created_at.desc()).all()
+    return [_detail_payload(collab) for collab in query.order_by(models.Collab.created_at.desc()).all()]
 
 
 @router.get("/{collab_id}", response_model=schemas.CollabDetailOut)
@@ -363,13 +408,60 @@ def get_collab_detail(
 ):
     collab = (
         db.query(models.Collab)
-        .options(joinedload(models.Collab.brand))
+        .options(joinedload(models.Collab.brand), selectinload(models.Collab.invoices))
         .filter(models.Collab.id == collab_id)
         .first()
     )
     if not collab:
         raise HTTPException(404, "Collaboration not found")
     return _detail_payload(collab)
+
+
+@router.patch("/{collab_id}/archive")
+def archive_collaboration(
+    collab_id: int,
+    archived: bool = True,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    collab = db.query(models.Collab).filter(models.Collab.id == collab_id).first()
+    if not collab:
+        raise HTTPException(404, "Collaboration not found")
+    collab.archived_at = datetime.now(timezone.utc).replace(tzinfo=None) if archived else None
+    details = dict(collab.details or {})
+    activity_log = list(details.get("activity_log") or [])
+    activity_log.append(_activity(
+        "collaboration_archived" if archived else "collaboration_restored",
+        "Moved out of the active pipeline" if archived else "Restored to the active pipeline",
+    ))
+    details["activity_log"] = activity_log[-100:]
+    collab.details = details
+    db.commit()
+    return {"message": "Collaboration archived" if archived else "Collaboration restored"}
+
+
+@router.delete("/{collab_id}")
+def delete_collaboration(
+    collab_id: int,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    """Remove a pipeline record without deleting its brand or financial history."""
+    collab = db.query(models.Collab).filter(models.Collab.id == collab_id).first()
+    if not collab:
+        raise HTTPException(404, "Collaboration not found")
+
+    # Invoices and published content are historical records. Keep them, but
+    # detach them before deleting the collaboration they were created from.
+    db.query(models.Invoice).filter(models.Invoice.collab_id == collab_id).update(
+        {models.Invoice.collab_id: None}, synchronize_session=False
+    )
+    db.query(models.ContentItem).filter(models.ContentItem.collab_id == collab_id).update(
+        {models.ContentItem.collab_id: None}, synchronize_session=False
+    )
+    db.delete(collab)
+    db.commit()
+    return {"message": "Collaboration deleted"}
 
 
 @router.patch("/{collab_id}", response_model=schemas.CollabDetailOut)
@@ -434,9 +526,19 @@ def update_collab_detail(
         "deliverable_checklist",
         "resource_links",
         "performance_metrics",
+        "priority",
+        "assignee",
+        "waiting_on",
+        "next_action",
     ):
         if field in updates:
             value = updates.pop(field)
+            if field == "priority" and value not in VALID_PRIORITIES:
+                raise HTTPException(400, f"Priority must be one of {sorted(VALID_PRIORITIES)}")
+            if field == "assignee" and value not in VALID_ASSIGNEES:
+                raise HTTPException(400, f"Assignee must be one of {sorted(VALID_ASSIGNEES)}")
+            if field == "waiting_on" and value not in VALID_WAITING_ON:
+                raise HTTPException(400, f"Waiting on must be one of {sorted(VALID_WAITING_ON)}")
             if isinstance(value, list):
                 value = [
                     item.model_dump() if hasattr(item, "model_dump") else item

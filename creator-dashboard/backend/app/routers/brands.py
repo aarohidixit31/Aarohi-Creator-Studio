@@ -8,7 +8,8 @@ from ..auth import get_current_admin
 router = APIRouter(prefix="/api/brands", tags=["brands"])
 
 ACTIVE_COLLAB_STATUSES = {
-    "new_inquiry", "in_discussion", "negotiating", "confirmed", "content_live", "invoiced"
+    "new", "in_discussion", "negotiating", "confirmed", "agreement_invoice",
+    "script_approved", "shoot_done", "draft_submitted", "content_posted",
 }
 
 
@@ -29,7 +30,8 @@ def _brand_summary(brand: models.Brand):
         "created_at": brand.created_at,
         "collaboration_count": len(collabs),
         "active_collaboration_count": sum(
-            collab.status in ACTIVE_COLLAB_STATUSES for collab in collabs
+            collab.status in ACTIVE_COLLAB_STATUSES and collab.archived_at is None
+            for collab in collabs
         ),
         "invoice_count": len(invoices),
         "total_invoiced": sum(invoice.total or 0 for invoice in invoices),

@@ -28,8 +28,8 @@ class Collab(Base):
 
     # Pipeline stage
     status = Column(
-        String, default="new_inquiry"
-    )  # new_inquiry, in_discussion, negotiating, confirmed, content_live, invoiced, paid, closed
+        String, default="new"
+    )  # See VALID_STATUSES in routers/collabs.py.
 
     deliverables = Column(Text)   # free text, e.g. "1 Reel + 2 Stories"
     budget = Column(Float)
@@ -39,6 +39,7 @@ class Collab(Base):
     content_link = Column(String)    # link to live content once posted
     notes = Column(Text)
     details = Column(JSON, default=dict)  # checklist, links, performance, follow-up, activity
+    archived_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

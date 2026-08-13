@@ -10,13 +10,16 @@ const money = new Intl.NumberFormat('en-IN', {
 })
 
 const STAGE_LABELS = {
-  new_inquiry: 'New inquiry',
+  new: 'New',
   in_discussion: 'In discussion',
   negotiating: 'Negotiating',
   confirmed: 'Confirmed',
-  content_live: 'Content live',
-  invoiced: 'Invoiced',
-  paid: 'Paid',
+  agreement_invoice: 'Agreement & Invoice',
+  script_approved: 'Script Approved',
+  shoot_done: 'Shoot Done',
+  draft_submitted: 'Draft Submitted',
+  content_posted: 'Content Posted',
+  payment_received: 'Payment Received',
   closed: 'Closed',
 }
 

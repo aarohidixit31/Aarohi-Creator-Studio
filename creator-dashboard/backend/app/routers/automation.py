@@ -71,7 +71,10 @@ def _run_daily(db: Session) -> dict:
     collabs = (
         db.query(models.Collab)
         .options(joinedload(models.Collab.brand))
-        .filter(models.Collab.status.in_(("new_inquiry", "in_discussion", "negotiating")))
+        .filter(
+            models.Collab.status.in_(("new", "in_discussion", "negotiating")),
+            models.Collab.archived_at.is_(None),
+        )
         .all()
     )
     for collab in collabs:
@@ -91,7 +94,7 @@ def _run_daily(db: Session) -> dict:
         if follow_up_at and follow_up_at <= now:
             reason = "Scheduled follow-up is due"
             waiting_since = follow_up_at
-        elif collab.status == "new_inquiry" and created_at <= now - timedelta(hours=24):
+        elif collab.status == "new" and created_at <= now - timedelta(hours=24):
             reason = "New inquiry has not moved forward"
             waiting_since = created_at
         else:

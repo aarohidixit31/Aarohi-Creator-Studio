@@ -56,13 +56,17 @@ class AdminCollabCreate(BaseModel):
     contact_person: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
-    status: str = "new_inquiry"
+    status: str = "new"
     budget: Optional[float] = None
     campaign_type: Optional[str] = None
     deliverables: Optional[str] = None
     deadline: Optional[datetime] = None
     brief: Optional[str] = None
     notes: Optional[str] = None
+    priority: str = "normal"
+    assignee: str = "unassigned"
+    waiting_on: str = "none"
+    next_action: Optional[str] = None
 
 
 class CollabOut(BaseModel):
@@ -80,6 +84,15 @@ class CollabOut(BaseModel):
     content_link: Optional[str]
     notes: Optional[str]
     created_at: datetime
+    priority: str = "normal"
+    assignee: str = "unassigned"
+    waiting_on: str = "none"
+    next_action: Optional[str] = None
+    stage_entered_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
+    has_agreement: bool = False
+    invoice_count: int = 0
+    paid_invoice_count: int = 0
 
 class CollabStatusUpdate(BaseModel):
     status: str
@@ -134,6 +147,10 @@ class CollabDetailUpdate(BaseModel):
     deliverable_checklist: Optional[List[DeliverableTask]] = None
     resource_links: Optional[List[ResourceLink]] = None
     performance_metrics: Optional[List[PerformanceMetric]] = None
+    priority: Optional[str] = None
+    assignee: Optional[str] = None
+    waiting_on: Optional[str] = None
+    next_action: Optional[str] = None
 
 
 # ---------- Invoice ----------
