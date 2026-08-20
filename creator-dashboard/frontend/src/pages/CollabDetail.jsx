@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { authFetch } from '../api.js'
+import { API, authFetch } from '../api.js'
 import { Button, FormField } from '../components/ui.jsx'
+import AgreementCenter from '../components/AgreementCenter.jsx'
 
 const STAGES = [
   ['new', 'New'],
@@ -19,11 +20,15 @@ const STAGES = [
 
 const TABS = [
   ['overview', 'Overview'],
+  ['agreement', 'Agreement'],
+  ['finance', 'Finance'],
   ['deliverables', 'Deliverables'],
   ['resources', 'Files & links'],
   ['results', 'Content results'],
   ['notes', 'Notes & activity'],
 ]
+const FINANCE_FIELDS = new Set(['amount_received', 'payment_date', 'payment_method', 'tds_deduction', 'other_deductions', 'finance_notes'])
+const DELIVERY_COMPLETE_STATUSES = new Set(['content_posted', 'payment_received', 'closed'])
 
 export default function CollabDetail() {
   const { collabId } = useParams()
@@ -35,6 +40,10 @@ export default function CollabDetail() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [resourceKind, setResourceKind] = useState('Brief')
+  const [resourceLabel, setResourceLabel] = useState('')
+  const [resourceFile, setResourceFile] = useState(null)
+  const [resourceUploading, setResourceUploading] = useState(false)
 
   useEffect(() => {
     authFetch(`/api/collabs/${collabId}`)
@@ -75,7 +84,11 @@ export default function CollabDetail() {
   }, [dirty])
 
   function patch(field, value) {
-    setForm((current) => ({ ...current, [field]: value }))
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+      ...(FINANCE_FIELDS.has(field) ? { finance_tracking_enabled: true } : {}),
+    }))
     setNotice('')
   }
 
@@ -107,10 +120,46 @@ export default function CollabDetail() {
       setForm(normalized)
       setBaseline(JSON.stringify(normalized))
       setNotice('Collaboration saved.')
+      return true
+    } catch (err) {
+      setError(err.message)
+      return false
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function discardChanges() {
+    if (!baseline) return
+    setForm(JSON.parse(baseline))
+    setError('')
+    setNotice('Unsaved changes discarded.')
+  }
+
+  async function uploadResource(file = resourceFile) {
+    if (!file) return
+    if (dirty && !(await save())) return
+    setResourceUploading(true)
+    setError('')
+    setNotice('')
+    const body = new FormData()
+    body.append('file', file)
+    body.append('kind', resourceKind)
+    if (resourceLabel.trim()) body.append('label', resourceLabel.trim())
+    try {
+      const response = await authFetch(`/api/collabs/${collabId}/resources`, { method: 'POST', body })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.detail || 'Could not upload campaign file')
+      const normalized = normalize(payload)
+      setForm(normalized)
+      setBaseline(JSON.stringify(normalized))
+      setResourceFile(null)
+      setResourceLabel('')
+      setNotice(`${file.name} uploaded to campaign resources.`)
     } catch (err) {
       setError(err.message)
     } finally {
-      setSaving(false)
+      setResourceUploading(false)
     }
   }
 
@@ -123,6 +172,8 @@ export default function CollabDetail() {
       </div>
     )
   }
+
+  const scheduleSummary = collaborationScheduleSummary(form)
 
   return (
     <div className="admin-page collab-detail-page">
@@ -149,7 +200,8 @@ export default function CollabDetail() {
           <Button variant="secondary" onClick={() => navigate(`/admin/invoices/new?brand_id=${form.brand_id}&collab_id=${form.id}`)}>
             Generate invoice
           </Button>
-          <Button onClick={save} loading={saving} disabled={!dirty}>{saving ? 'Saving changes' : 'Save changes'}</Button>
+          {dirty && <Button size="sm" variant="ghost" onClick={discardChanges} disabled={saving}>Discard</Button>}
+          <Button size="sm" onClick={save} loading={saving} disabled={!dirty}>{saving ? 'Saving' : 'Save changes'}</Button>
         </div>
       </header>
 
@@ -168,7 +220,7 @@ export default function CollabDetail() {
 
       <div className="detail-summary-grid">
         <SummaryCard label="Budget" value={form.budget ? money(form.budget) : 'Not shared'} />
-        <SummaryCard label="Campaign deadline" value={form.deadline ? formatDate(form.deadline) : 'Not scheduled'} />
+        <SummaryCard label={scheduleSummary.label} value={scheduleSummary.value} tone={scheduleSummary.tone} />
         <SummaryCard label="Days in stage" value={`${daysInStage(form.stage_entered_at)} days`} tone={daysInStage(form.stage_entered_at) > 7 ? 'yellow' : ''} />
         <SummaryCard label="Deliverables complete" value={`${checklistProgress}%`} tone={checklistProgress === 100 ? 'green' : ''} />
       </div>
@@ -179,6 +231,7 @@ export default function CollabDetail() {
             {label}
             {value === 'deliverables' && form.deliverable_checklist.length > 0 && <span>{form.deliverable_checklist.length}</span>}
             {value === 'resources' && form.resource_links.length > 0 && <span>{form.resource_links.length}</span>}
+            {value === 'finance' && form.invoice_count > 0 && <span>{form.invoice_count}</span>}
           </button>
         ))}
       </nav>
@@ -191,7 +244,7 @@ export default function CollabDetail() {
                 <div className="editor-grid two">
                   <Field label="Campaign type"><input value={form.campaign_type || ''} onChange={(event) => patch('campaign_type', event.target.value)} /></Field>
                   <Field label="Budget (INR)"><input type="number" min="0" value={form.budget ?? ''} onChange={(event) => patch('budget', event.target.value)} /></Field>
-                  <Field label="Campaign deadline"><input type="date" value={dateInput(form.deadline)} onChange={(event) => patch('deadline', event.target.value)} /></Field>
+                  <Field label={DELIVERY_COMPLETE_STATUSES.has(form.status) ? 'Original campaign deadline' : 'Campaign deadline'}><input type="date" value={dateInput(form.deadline)} onChange={(event) => patch('deadline', event.target.value)} /></Field>
                   <Field label="Next follow-up"><input type="datetime-local" value={dateTimeInput(form.follow_up_at)} onChange={(event) => patch('follow_up_at', event.target.value)} /></Field>
                   <Field label="Priority">
                     <select value={form.priority} onChange={(event) => patch('priority', event.target.value)}>
@@ -247,23 +300,100 @@ export default function CollabDetail() {
           </DetailSection>
         )}
 
+        {activeTab === 'agreement' && <AgreementCenter collab={form} />}
+
+        {activeTab === 'finance' && (
+          <div className="collab-finance-workspace">
+            <section className="collab-finance-summary">
+              <SummaryCard label="Agreed amount" value={money(form.budget || 0)} />
+              <SummaryCard label="Invoiced" value={money(form.invoiced_amount || 0)} />
+              <SummaryCard label="Cash received" value={money(form.amount_received || 0)} tone="green" />
+              <SummaryCard label="Balance remaining" value={money(financeRemaining(form))} tone={financeRemaining(form) > 0 ? 'yellow' : 'green'} />
+            </section>
+            <div className="detail-layout finance-detail-layout">
+              <div className="detail-main">
+                <DetailSection title="Payment tracking" description="Record the actual amount received. TDS and other deductions are included when calculating the remaining balance.">
+                  <div className="editor-grid two">
+                    <Field label="Amount received (INR)"><input type="number" min="0" value={form.amount_received ?? ''} onChange={(event) => patch('amount_received', event.target.value)} /></Field>
+                    <Field label="Payment date"><input type="date" value={dateInput(form.payment_date)} onChange={(event) => patch('payment_date', event.target.value)} /></Field>
+                    <Field label="Payment method">
+                      <select value={form.payment_method || ''} onChange={(event) => patch('payment_method', event.target.value)}>
+                        <option value="">Not recorded</option><option value="Bank transfer">Bank transfer</option><option value="UPI">UPI</option><option value="PayPal">PayPal</option><option value="Other">Other</option>
+                      </select>
+                    </Field>
+                    <Field label="TDS deducted (INR)"><input type="number" min="0" value={form.tds_deduction ?? ''} onChange={(event) => patch('tds_deduction', event.target.value)} /></Field>
+                    <Field label="Other deductions (INR)"><input type="number" min="0" value={form.other_deductions ?? ''} onChange={(event) => patch('other_deductions', event.target.value)} /></Field>
+                  </div>
+                  <Field label="Finance notes"><textarea rows="4" value={form.finance_notes || ''} onChange={(event) => patch('finance_notes', event.target.value)} placeholder="Payment reference, partial-payment plan, deduction reason..." /></Field>
+                  <div className="finance-formula-note">
+                    <strong>Balance calculation</strong>
+                    <span>Agreed amount − cash received − TDS − other deductions</span>
+                  </div>
+                </DetailSection>
+              </div>
+              <aside className="detail-sidebar">
+                <DetailSection title="Invoice connection" description="Invoices remain linked to this collaboration and are protected against accidental duplicates.">
+                  <div className="finance-invoice-status">
+                    <span>{form.invoice_count ? `${form.invoice_count} invoice${form.invoice_count === 1 ? '' : 's'} created` : 'No invoice created'}</span>
+                    <strong>{money(form.invoiced_amount || 0)}</strong>
+                    <small>{form.paid_invoice_count ? `${form.paid_invoice_count} marked paid` : 'No paid invoice yet'}</small>
+                  </div>
+                  <Button size="sm" to={`/admin/invoices/new?brand_id=${form.brand_id}&collab_id=${form.id}`}>
+                    {form.invoice_count ? 'Review or create another' : 'Create invoice'}
+                  </Button>
+                  {form.invoice_count > 0 && <Button size="sm" variant="secondary" to="/admin/invoices">Open earnings center</Button>}
+                </DetailSection>
+              </aside>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'resources' && (
-          <DetailSection title="Campaign resources" description="Keep contracts, briefs, drafts and folders one click away.">
-            <div className="detail-repeat-list">
+          <DetailSection title="Campaign resource hub" description="Upload campaign files or save important working links in one place.">
+            <div
+              className="resource-upload-zone"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                const file = event.dataTransfer.files?.[0]
+                if (file) setResourceFile(file)
+              }}
+            >
+              <div className="resource-upload-mark" aria-hidden="true">&#8593;</div>
+              <div className="resource-upload-copy">
+                <strong>{resourceFile ? resourceFile.name : 'Drop a campaign file here'}</strong>
+                <span>{resourceFile ? formatBytes(resourceFile.size) : 'PDF, Word, Excel, PowerPoint, ZIP, text or image · up to 15 MB'}</span>
+              </div>
+              <label className="resource-file-picker">
+                {resourceFile ? 'Choose another' : 'Browse files'}
+                <input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.txt,.jpg,.jpeg,.png,.webp" onChange={(event) => setResourceFile(event.target.files?.[0] || null)} />
+              </label>
+            </div>
+            <div className="resource-upload-controls">
+              <select value={resourceKind} onChange={(event) => setResourceKind(event.target.value)}>{resourceKindOptions()}</select>
+              <input value={resourceLabel} onChange={(event) => setResourceLabel(event.target.value)} placeholder="Display name (uses filename if blank)" />
+              <Button onClick={() => uploadResource()} loading={resourceUploading} disabled={!resourceFile}>Upload file</Button>
+            </div>
+
+            <div className="resource-section-label"><span>Saved resources</span><em>{form.resource_links.length}</em></div>
+            <div className="detail-repeat-list resource-library">
               {form.resource_links.map((item, index) => (
-                <div className="resource-row" key={index}>
-                  <select value={item.kind || 'Brief'} onChange={(event) => patchList('resource_links', index, 'kind', event.target.value)}>
-                    <option>Brief</option><option>Contract</option><option>Draft</option><option>Drive folder</option><option>Other</option>
-                  </select>
-                  <input value={item.label} onChange={(event) => patchList('resource_links', index, 'label', event.target.value)} placeholder="Label" />
-                  <input type="url" value={item.url} onChange={(event) => patchList('resource_links', index, 'url', event.target.value)} placeholder="https://..." />
-                  {item.url && <a href={item.url} target="_blank" rel="noreferrer">↗</a>}
+                <div className={`resource-row ${item.source === 'upload' ? 'uploaded' : ''}`} key={`${item.url}-${index}`}>
+                  <select value={item.kind || 'Brief'} onChange={(event) => patchList('resource_links', index, 'kind', event.target.value)}>{resourceKindOptions()}</select>
+                  <div className="resource-name-cell">
+                    <input value={item.label} onChange={(event) => patchList('resource_links', index, 'label', event.target.value)} placeholder="Label" />
+                    {item.source === 'upload' && <small>{item.filename} · {formatBytes(item.size)}</small>}
+                  </div>
+                  {item.source === 'upload'
+                    ? <span className="resource-stored-badge">Cloud file</span>
+                    : <input type="url" value={item.url} onChange={(event) => patchList('resource_links', index, 'url', event.target.value)} placeholder="https://..." />}
+                  {item.url && <a href={absoluteResourceUrl(item.url)} target="_blank" rel="noreferrer" title="Open resource">&#8599;</a>}
                   <button type="button" aria-label="Remove resource" onClick={() => removeListItem('resource_links', index)}>×</button>
                 </div>
               ))}
               {!form.resource_links.length && <div className="empty-inline">No campaign files or links added yet.</div>}
             </div>
-            <button className="small-button" type="button" onClick={() => patch('resource_links', [...form.resource_links, { label: '', url: '', kind: 'Brief' }])}>+ Add resource</button>
+            <button className="small-button" type="button" onClick={() => patch('resource_links', [...form.resource_links, { label: '', url: '', kind: 'Brief', source: 'link' }])}>+ Add external link</button>
           </DetailSection>
         )}
 
@@ -314,19 +444,26 @@ export default function CollabDetail() {
 function CampaignWarnings({ form }) {
   const warnings = []
   const now = new Date()
-  if (form.deadline) {
+  if (form.deadline && !DELIVERY_COMPLETE_STATUSES.has(form.status)) {
     const deadline = new Date(form.deadline)
     const days = Math.ceil((deadline.getTime() - now.getTime()) / 86400000)
     if (days < 0) warnings.push({ tone: 'danger', text: `Campaign deadline passed ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ago.` })
     else if (days <= 3) warnings.push({ tone: 'warning', text: days === 0 ? 'Campaign deadline is today.' : `Campaign deadline is in ${days} day${days === 1 ? '' : 's'}.` })
   }
-  if (form.follow_up_at && new Date(form.follow_up_at) <= now) warnings.push({ tone: 'danger', text: 'The scheduled brand follow-up is overdue.' })
+  if (form.follow_up_at && !['payment_received', 'closed'].includes(form.status) && new Date(form.follow_up_at) <= now) warnings.push({ tone: 'danger', text: 'The scheduled brand follow-up is overdue.' })
   if (!warnings.length) return null
   return (
     <div className="campaign-warning-list">
       {warnings.map((warning, index) => <div className={warning.tone} key={index}><span>!</span>{warning.text}</div>)}
     </div>
   )
+}
+
+function collaborationScheduleSummary(form) {
+  if (form.status === 'content_posted') return { label: 'Delivery status', value: 'Content posted', tone: 'green' }
+  if (form.status === 'payment_received') return { label: 'Payment status', value: 'Payment received', tone: 'green' }
+  if (form.status === 'closed') return { label: 'Campaign status', value: 'Closed', tone: 'green' }
+  return { label: 'Campaign deadline', value: form.deadline ? formatDate(form.deadline) : 'Not scheduled', tone: '' }
 }
 
 function normalize(data) {
@@ -341,11 +478,17 @@ function normalize(data) {
     assignee: data.assignee || 'unassigned',
     waiting_on: data.waiting_on || 'none',
     next_action: data.next_action || '',
+    amount_received: data.amount_received ?? 0,
+    tds_deduction: data.tds_deduction ?? 0,
+    other_deductions: data.other_deductions ?? 0,
+    payment_method: data.payment_method || '',
+    finance_notes: data.finance_notes || '',
+    finance_tracking_enabled: Boolean(data.finance_tracking_enabled),
   }
 }
 
 function toPayload(form) {
-  return {
+  const payload = {
     brand_name: form.brand.name || '',
     brand_contact_person: form.brand.contact_person || null,
     brand_email: form.brand.email || null,
@@ -367,6 +510,15 @@ function toPayload(form) {
     waiting_on: form.waiting_on,
     next_action: form.next_action || null,
   }
+  if (form.finance_tracking_enabled) Object.assign(payload, {
+    amount_received: form.amount_received === '' || form.amount_received == null ? null : Number(form.amount_received),
+    payment_date: form.payment_date ? new Date(form.payment_date).toISOString() : null,
+    payment_method: form.payment_method || null,
+    tds_deduction: form.tds_deduction === '' || form.tds_deduction == null ? 0 : Number(form.tds_deduction),
+    other_deductions: form.other_deductions === '' || form.other_deductions == null ? 0 : Number(form.other_deductions),
+    finance_notes: form.finance_notes || null,
+  })
+  return payload
 }
 
 function DetailSection({ title, description, children }) {
@@ -384,6 +536,16 @@ function Field({ label, children }) {
 
 function SummaryCard({ label, value, tone = '' }) {
   return <article className={`detail-summary-card ${tone}`}><span>{label}</span><strong>{value}</strong></article>
+}
+
+function financeRemaining(form) {
+  return Math.max(
+    Number(form.budget || 0)
+      - Number(form.amount_received || 0)
+      - Number(form.tds_deduction || 0)
+      - Number(form.other_deductions || 0),
+    0,
+  )
 }
 
 function stageLabel(status) {
@@ -425,7 +587,25 @@ function activityTitle(event) {
   if (event.action === 'status_changed') return 'Status changed'
   if (event.action === 'inquiry_received') return 'Inquiry received'
   if (event.action === 'collaboration_added') return 'Collaboration added'
+  if (event.action === 'resource_uploaded') return 'Campaign file uploaded'
+  if (event.action === 'finance_updated') return 'Payment details updated'
   return 'Workspace updated'
+}
+
+function resourceKindOptions() {
+  return ['Brief', 'Script', 'Contract', 'Draft', 'Reference', 'Brand assets', 'Drive folder', 'Live content', 'Other']
+    .map((kind) => <option key={kind}>{kind}</option>)
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0)
+  if (!bytes) return 'File size unavailable'
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function absoluteResourceUrl(value) {
+  return /^https?:\/\//i.test(value) ? value : `${API}${value}`
 }
 
 function daysInStage(value) {

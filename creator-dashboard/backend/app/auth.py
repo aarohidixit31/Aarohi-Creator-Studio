@@ -21,7 +21,7 @@ load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY") or "change-this-in-production"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24 * 7  # 1 week — it's just you, no need to re-login daily
+ACCESS_TOKEN_EXPIRE_HOURS = 24 * 7  # 1 week; it's just you, so no need to re-login daily
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL") or "you@example.com"
 ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH") or ""

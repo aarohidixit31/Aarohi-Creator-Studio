@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
 from app import models
+from app.routers import collabs
+from app.services.storage import StorageResult
 
 
 def inquiry_payload(email="partner@acme.com"):
@@ -52,6 +54,12 @@ def test_admin_can_create_and_manage_collaboration(client, seed_brand):
         "assignee": "manager",
         "waiting_on": "brand",
         "next_action": "Get the final script approved",
+        "amount_received": 26000,
+        "payment_date": datetime.now(timezone.utc).isoformat(),
+        "payment_method": "Bank transfer",
+        "tds_deduction": 3000,
+        "other_deductions": 1000,
+        "finance_notes": "TDS certificate requested",
     })
     assert updated.status_code == 200
     assert len(updated.json()["deliverable_checklist"]) == 2
@@ -60,12 +68,55 @@ def test_admin_can_create_and_manage_collaboration(client, seed_brand):
     assert updated.json()["assignee"] == "manager"
     assert updated.json()["waiting_on"] == "brand"
     assert updated.json()["next_action"] == "Get the final script approved"
+    assert updated.json()["amount_received"] == 26000
+    assert updated.json()["gross_received"] == 29000
+    assert updated.json()["remaining_balance"] == 0
+    assert updated.json()["payment_method"] == "Bank transfer"
+    assert any(event["action"] == "finance_updated" for event in updated.json()["activity_log"])
+
+    earnings = client.get("/api/invoices/ledger").json()
+    assert earnings["total_business_received"] == 29000
 
     moved = client.patch(f"/api/collabs/{collab_id}/status", json={"status": "content_posted"})
     assert moved.status_code == 200
     detail = client.get(f"/api/collabs/{collab_id}")
     assert detail.json()["status"] == "content_posted"
     assert any(event["action"] == "status_changed" for event in detail.json()["activity_log"])
+
+
+def test_admin_can_upload_campaign_resources(client, seed_brand, monkeypatch):
+    collab_id = client.post("/api/collabs/", json={
+        "brand_id": seed_brand.id,
+        "campaign_type": "Product launch",
+    }).json()["id"]
+    monkeypatch.setattr(
+        collabs,
+        "store_document",
+        lambda *args, **kwargs: StorageResult(
+            url="https://res.cloudinary.com/example/raw/upload/campaign-brief.pdf",
+            backend="cloudinary",
+        ),
+    )
+
+    uploaded = client.post(
+        f"/api/collabs/{collab_id}/resources",
+        data={"kind": "Brief", "label": "Final campaign brief"},
+        files={"file": ("brief.pdf", b"%PDF-test", "application/pdf")},
+    )
+    assert uploaded.status_code == 200
+    resource = uploaded.json()["resource_links"][0]
+    assert resource["label"] == "Final campaign brief"
+    assert resource["source"] == "upload"
+    assert resource["filename"] == "brief.pdf"
+    assert resource["size"] == 9
+    assert any(event["action"] == "resource_uploaded" for event in uploaded.json()["activity_log"])
+
+    rejected = client.post(
+        f"/api/collabs/{collab_id}/resources",
+        data={"kind": "Brief"},
+        files={"file": ("malware.exe", b"binary", "application/x-msdownload")},
+    )
+    assert rejected.status_code == 400
 
 
 def test_admin_can_archive_and_restore_collaboration(client, seed_brand):

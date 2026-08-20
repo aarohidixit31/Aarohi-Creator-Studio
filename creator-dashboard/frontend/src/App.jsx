@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useEffect } from 'react'
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import MediaKit from './pages/MediaKit.jsx'
 import CollabForm from './pages/CollabForm.jsx'
 import AdminLogin from './pages/AdminLogin.jsx'
@@ -11,7 +12,6 @@ import InvoiceList from './pages/InvoiceList.jsx'
 import BrandDirectory from './pages/BrandDirectory.jsx'
 import BrandDetail from './pages/BrandDetail.jsx'
 import AttentionPage from './pages/AttentionPage.jsx'
-import ContentLibrary from './pages/ContentLibrary.jsx'
 import SocialStats from './pages/SocialStats.jsx'
 import MediaKitPreview from './pages/MediaKitPreview.jsx'
 import ManagerCalendar from './pages/ManagerCalendar.jsx'
@@ -19,6 +19,7 @@ import ManagerCalendar from './pages/ManagerCalendar.jsx'
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={<MediaKit />} />
         <Route path="/collab" element={<CollabForm />} />
@@ -31,7 +32,6 @@ export default function App() {
           <Route path="brands/:brandId" element={<BrandDetail />} />
           <Route path="attention" element={<AttentionPage />} />
           <Route path="calendar" element={<ManagerCalendar />} />
-          <Route path="content" element={<ContentLibrary />} />
           <Route path="social-stats" element={<SocialStats />} />
           <Route path="media-kit" element={<MediaKitEditor />} />
           <Route path="invoices" element={<InvoiceList />} />
@@ -40,4 +40,14 @@ export default function App() {
       </Routes>
     </BrowserRouter>
   )
+}
+
+function ScrollToTop() {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
+  return null
 }

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional, List
-from datetime import datetime
+from datetime import date, datetime
 
 
 # ---------- Brand ----------
@@ -93,6 +93,16 @@ class CollabOut(BaseModel):
     has_agreement: bool = False
     invoice_count: int = 0
     paid_invoice_count: int = 0
+    invoiced_amount: float = 0
+    amount_received: float = 0
+    gross_received: float = 0
+    remaining_balance: float = 0
+    payment_date: Optional[datetime] = None
+    payment_method: Optional[str] = None
+    tds_deduction: float = 0
+    other_deductions: float = 0
+    finance_notes: Optional[str] = None
+    finance_tracking_enabled: bool = False
 
 class CollabStatusUpdate(BaseModel):
     status: str
@@ -107,6 +117,10 @@ class ResourceLink(BaseModel):
     label: str
     url: str
     kind: Optional[str] = None
+    source: str = "link"
+    filename: Optional[str] = None
+    content_type: Optional[str] = None
+    size: Optional[int] = None
 
 
 class PerformanceMetric(BaseModel):
@@ -151,6 +165,36 @@ class CollabDetailUpdate(BaseModel):
     assignee: Optional[str] = None
     waiting_on: Optional[str] = None
     next_action: Optional[str] = None
+    amount_received: Optional[float] = None
+    payment_date: Optional[datetime] = None
+    payment_method: Optional[str] = None
+    tds_deduction: Optional[float] = None
+    other_deductions: Optional[float] = None
+    finance_notes: Optional[str] = None
+
+
+class AgreementUpdate(BaseModel):
+    effective_date: Optional[datetime] = None
+    termination_date: Optional[datetime] = None
+    deliverables: Optional[str] = None
+    timeline: Optional[str] = None
+    total_amount: Optional[float] = None
+    payment_structure: str = "50% advance payment, 50% final payment"
+    payment_due_days: int = 5
+    revision_limit: int = 2
+    content_live_months: int = 6
+    usage_rights: str = "Organic reposting on the Brand's owned social channels with prior consent and proper creator credit. Paid usage, whitelisting, boosting, and third-party licensing require a separate written agreement."
+    additional_terms: Optional[str] = None
+
+
+class AgreementOut(AgreementUpdate):
+    agreement_number: str
+    status: str
+    generated_at: Optional[datetime] = None
+    sent_at: Optional[datetime] = None
+    signed_at: Optional[datetime] = None
+    signed_file_url: Optional[str] = None
+    email_message_id: Optional[str] = None
 
 
 # ---------- Invoice ----------
@@ -167,6 +211,7 @@ class InvoiceCreate(BaseModel):
     tax_percent: float = 0
     payment_terms: str = "Due within 15 days"
     due_date: Optional[datetime] = None
+    allow_duplicate: bool = False
 
 
 class InvoiceOut(BaseModel):
@@ -205,6 +250,9 @@ class InvoiceListOut(InvoiceOut):
 
 
 class InvoiceLedgerOut(BaseModel):
+    total_collaboration_value: float
+    total_business_received: float
+    historical_received: float
     total_invoiced: float
     total_received: float
     total_outstanding: float
@@ -212,6 +260,9 @@ class InvoiceLedgerOut(BaseModel):
     invoice_count: int
     paid_count: int
     outstanding_count: int
+    collaboration_count: int
+    valued_collaboration_count: int
+    historical_paid_count: int
 
 
 class AttentionItem(BaseModel):
@@ -255,10 +306,25 @@ class CalendarEvent(BaseModel):
     href: str
 
 
+class CalendarNoteUpdate(BaseModel):
+    content: str = Field(min_length=1, max_length=5000)
+
+
+class CalendarNoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    note_date: date
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class CalendarOut(BaseModel):
     start: datetime
     end: datetime
     events: List[CalendarEvent] = Field(default_factory=list)
+    notes: List[CalendarNoteOut] = Field(default_factory=list)
 
 
 # ---------- Content history ----------
@@ -271,6 +337,22 @@ class ContentMetrics(BaseModel):
     shares: Optional[int] = None
     conversions: Optional[int] = None
     engagement_rate: Optional[float] = None
+    average_watch_time_seconds: Optional[float] = None
+    average_view_percentage: Optional[float] = None
+    estimated_minutes_watched: Optional[float] = None
+    follows: Optional[int] = None
+    profile_visits: Optional[int] = None
+    link_clicks: Optional[int] = None
+    verification_method: str = "manual"
+    proof_url: Optional[str] = None
+    measured_at: Optional[datetime] = None
+    external_id: Optional[str] = None
+    sync_source: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    review_status: Optional[str] = None
+    total_interactions: Optional[int] = None
+    media_type: Optional[str] = None
+    media_product_type: Optional[str] = None
 
 
 class ContentCreate(BaseModel):
@@ -308,6 +390,10 @@ class ContentOut(ContentCreate):
     brand: Optional[BrandOut] = None
     collab_label: Optional[str] = None
     created_at: datetime
+    performance_score: int = 0
+    performance_multiplier: float = 0
+    performance_label: str = "Add performance data"
+    calculated_engagement_rate: float = 0
 
 
 class ContentLibrarySummary(BaseModel):
@@ -317,6 +403,85 @@ class ContentLibrarySummary(BaseModel):
     total_reach: int
     average_engagement_rate: float
     top_content_id: Optional[int] = None
+    high_performer_count: int = 0
+    verified_count: int = 0
+    imported_count: int = 0
+    pending_review_count: int = 0
+
+
+class ContentSyncOut(BaseModel):
+    platform: str
+    discovered: int
+    imported: int
+    updated: int
+    skipped: int
+    pending_review: int
+    imported_ids: List[int] = Field(default_factory=list)
+    synced_at: datetime
+    analytics_connected: bool = False
+    analytics_error: Optional[str] = None
+
+
+class YouTubeImportRequest(BaseModel):
+    video_ids: List[str] = Field(min_length=1, max_length=500)
+
+
+class YouTubeCandidate(BaseModel):
+    video_id: str
+    title: str
+    content_url: str
+    thumbnail_url: Optional[str] = None
+    published_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    views: int = 0
+    likes: int = 0
+    comments: int = 0
+    already_imported: bool = False
+    content_id: Optional[int] = None
+
+
+class YouTubeOAuthStatus(BaseModel):
+    configured: bool
+    connected: bool
+    account_id: Optional[str] = None
+    account_name: Optional[str] = None
+    scopes: List[str] = Field(default_factory=list)
+    expires_at: Optional[datetime] = None
+
+
+class YouTubeCatalogOut(BaseModel):
+    items: List[YouTubeCandidate] = Field(default_factory=list)
+    oauth: YouTubeOAuthStatus
+    import_limit: int
+
+
+class InstagramImportRequest(BaseModel):
+    media_ids: List[str] = Field(min_length=1, max_length=500)
+
+
+class InstagramCandidate(BaseModel):
+    media_id: str
+    title: str
+    content_url: str
+    thumbnail_url: Optional[str] = None
+    published_at: Optional[datetime] = None
+    media_type: Optional[str] = None
+    media_product_type: Optional[str] = None
+    views: int = 0
+    likes: int = 0
+    comments: int = 0
+    already_imported: bool = False
+    content_id: Optional[int] = None
+
+
+class InstagramOAuthStatus(YouTubeOAuthStatus):
+    connection_type: Optional[str] = None
+
+
+class InstagramCatalogOut(BaseModel):
+    items: List[InstagramCandidate] = Field(default_factory=list)
+    oauth: InstagramOAuthStatus
+    import_limit: int
 
 
 # ---------- Live social statistics ----------
@@ -367,6 +532,7 @@ class PastCollab(BaseModel):
     image_url: Optional[str] = None
     content_url: Optional[str] = None
     summary: Optional[str] = None
+    views: Optional[int] = None
     visible: bool = True
 
 
@@ -418,6 +584,7 @@ class MediaKitUpdate(BaseModel):
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
     profile_image_url: Optional[str] = None
+    portrait_style: Optional[str] = "framed"
     cover_image_url: Optional[str] = None
     social_links: Optional[List[SocialLink]] = None
     highlights: Optional[List[MediaHighlight]] = None

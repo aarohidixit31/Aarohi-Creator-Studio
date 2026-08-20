@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Float, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, Date, Integer, String, Float, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .database import Base
@@ -159,3 +159,28 @@ class SocialStatSnapshot(Base):
     total_views = Column(Integer, nullable=True)
     media_count = Column(Integer, nullable=True)
     captured_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CalendarNote(Base):
+    __tablename__ = "calendar_notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    note_date = Column(Date, unique=True, nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class OAuthConnection(Base):
+    __tablename__ = "oauth_connections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, unique=True, nullable=False, index=True)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=True)
+    token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    scopes = Column(JSON, default=list)
+    provider_account_id = Column(String, nullable=True)
+    account_name = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

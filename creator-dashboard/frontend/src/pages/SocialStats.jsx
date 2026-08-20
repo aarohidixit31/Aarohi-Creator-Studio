@@ -6,7 +6,7 @@ const PLATFORM_META = {
   instagram: {
     label: 'Instagram',
     code: 'IG',
-    description: 'Professional-account followers and published media count',
+    description: 'Manual-token sync for followers and published media count',
     variables: ['META_ACCESS_TOKEN', 'INSTAGRAM_ACCOUNT_ID'],
   },
   youtube: {
@@ -132,6 +132,9 @@ export default function SocialStats() {
                   <div className="social-setup-state">
                     <strong>{item.configured ? 'The API returned an error' : 'Credentials not added yet'}</strong>
                     <p>{item.error || 'Add the environment variables below, restart the backend, then refresh.'}</p>
+                    {item.platform === 'instagram' && !item.configured && (
+                      <p>Instagram App ID and App Secret are OAuth credentials. This no-login option needs a generated user access token and the numeric Instagram account ID.</p>
+                    )}
                     <div>
                       {meta.variables.map((variable) => <code key={variable}>{variable}</code>)}
                     </div>
@@ -216,7 +219,7 @@ function GrowthPanel({ platform, snapshots }) {
 }
 
 function LiveMetric({ label, value }) {
-  return <div><span>{label}</span><strong>{value || '—'}</strong></div>
+  return <div><span>{label}</span><strong>{value || 'Not available'}</strong></div>
 }
 
 function statusLabel(item) {

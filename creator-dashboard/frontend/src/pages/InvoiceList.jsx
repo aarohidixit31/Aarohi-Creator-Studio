@@ -137,36 +137,42 @@ export default function InvoiceList() {
       <header className="admin-page-header">
         <div>
           <span className="eyebrow">Finance desk</span>
-          <h1>Invoices & ledger</h1>
-          <p>Track what has been billed, received, and still needs a follow-up.</p>
+          <h1>Earnings & invoices</h1>
+          <p>See collaboration value, actual earnings, invoices and pending payments together.</p>
         </div>
         <Button to="/admin/invoices/new" icon="+">New invoice</Button>
       </header>
 
-      <section className="ledger-grid" aria-label="Invoice summary">
+      <section className="ledger-grid" aria-label="Business earnings summary">
         <article className="ledger-card primary">
-          <span>Total invoiced</span>
-          <strong>{money.format(ledger?.total_invoiced || 0)}</strong>
-          <small>{ledger?.invoice_count || 0} invoices created</small>
+          <span>Total made</span>
+          <strong>{money.format(ledger?.total_business_received || 0)}</strong>
+          <small>Paid invoices + historical payments</small>
         </article>
         <article className="ledger-card success">
-          <span>Received</span>
-          <strong>{money.format(ledger?.total_received || 0)}</strong>
-          <small>{ledger?.paid_count || 0} paid invoices</small>
+          <span>Collaboration value</span>
+          <strong>{money.format(ledger?.total_collaboration_value || 0)}</strong>
+          <small>{ledger?.valued_collaboration_count || 0} collaborations with an amount</small>
         </article>
         <article className="ledger-card warning">
-          <span>Outstanding</span>
-          <strong>{money.format(ledger?.total_outstanding || 0)}</strong>
-          <small>{ledger?.outstanding_count || 0} need attention</small>
+          <span>Total collaborations</span>
+          <strong>{ledger?.collaboration_count || 0}</strong>
+          <small>Current and historical brand work</small>
         </article>
         <article className="ledger-card">
-          <span>Still in draft</span>
-          <strong>{money.format(ledger?.total_draft || 0)}</strong>
-          <small>Not sent to brands yet</small>
+          <span>Invoice outstanding</span>
+          <strong>{money.format(ledger?.total_outstanding || 0)}</strong>
+          <small>{ledger?.outstanding_count || 0} invoices need attention</small>
         </article>
       </section>
 
       <section className="invoice-panel">
+        <div className="earnings-breakdown" aria-label="Invoice and historical payment breakdown">
+          <div><span>Total invoiced</span><strong>{money.format(ledger?.total_invoiced || 0)}</strong></div>
+          <div><span>Invoice payments</span><strong>{money.format(ledger?.total_received || 0)}</strong></div>
+          <div><span>Direct / historical payments</span><strong>{money.format(ledger?.historical_received || 0)}</strong></div>
+          <div><span>Draft invoices</span><strong>{money.format(ledger?.total_draft || 0)}</strong></div>
+        </div>
         <div className="invoice-toolbar">
           <div className="invoice-filters" role="tablist" aria-label="Filter invoices by status">
             {STATUSES.map((status) => (

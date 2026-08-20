@@ -337,6 +337,39 @@ def send_invoice_delivery(
     )
 
 
+def send_agreement_delivery(
+    *,
+    recipient: str,
+    contact_person: str | None,
+    brand_name: str,
+    agreement_number: str,
+    pdf_bytes: bytes,
+    idempotency_key: str,
+) -> EmailResult:
+    first_name = _safe(contact_person, "there").split()[0]
+    subject = f"Collaboration agreement {agreement_number} - Aarohi Inframe"
+    body = f"""
+      <p style="margin:0 0 7px;color:#5b5fef;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">Agreement attached</p>
+      <h1 style="margin:0 0 14px;color:#111b45;font-size:27px;line-height:1.2;">Ready for review and signature</h1>
+      <p style="margin:0 0 20px;color:#596177;font-size:14px;line-height:1.7;">Hi {first_name}, please find collaboration agreement <strong>{_safe(agreement_number)}</strong> between Aarohi Inframe and <strong>{_safe(brand_name)}</strong> attached as a PDF.</p>
+      <div style="margin:20px 0;padding:17px 20px;background:#f6f7ff;border-left:4px solid #5b5fef;border-radius:8px;color:#111b45;font-size:13px;line-height:1.7;">
+        Please review the campaign scope and commercial terms, sign the agreement, and reply to this email with the signed copy.
+      </div>
+      <p style="margin:0;color:#7a8298;font-size:12px;line-height:1.7;">Reply to this email if any written clarification or amendment is needed before signing.</p>
+      <p style="margin:22px 0 0;color:#111b45;font-size:14px;"><strong>Aarohi Dixit</strong><br><span style="color:#7a8298;">Tech Content Creator · Aarohi Inframe</span></p>
+    """
+    return _send_email(
+        recipient,
+        subject,
+        _email_shell(f"Agreement {agreement_number} is attached for review.", body),
+        idempotency_key,
+        attachments=[{
+            "filename": f"{agreement_number}.pdf",
+            "content": base64.b64encode(pdf_bytes).decode("ascii"),
+        }],
+    )
+
+
 def send_manager_attention_digest(items: list[dict], idempotency_key: str) -> EmailResult:
     recipient = os.getenv("ADMIN_NOTIFICATION_EMAIL") or os.getenv("ADMIN_EMAIL")
     if not recipient:

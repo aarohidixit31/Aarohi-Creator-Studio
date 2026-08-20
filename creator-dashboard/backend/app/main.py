@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from .routers import media_kit, collabs, invoices, auth_routes, brands, content, social_stats, automation, calendar
+from .routers import media_kit, collabs, invoices, auth_routes, brands, content, social_stats, automation, calendar, agreements, youtube_oauth, instagram_oauth
 from .config import cors_origins, is_production, validate_production_config
 
 validate_production_config()
@@ -27,6 +27,9 @@ app.include_router(content.router)
 app.include_router(social_stats.router)
 app.include_router(automation.router)
 app.include_router(calendar.router)
+app.include_router(agreements.router)
+app.include_router(youtube_oauth.router)
+app.include_router(instagram_oauth.router)
 app.mount("/api/uploads", StaticFiles(directory=UPLOAD_ROOT), name="uploads")
 
 

@@ -31,6 +31,8 @@ export default function BrandDetail() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [addingToMediaKit, setAddingToMediaKit] = useState(null)
+  const [mediaKitNotice, setMediaKitNotice] = useState('')
 
   useEffect(() => {
     authFetch(`/api/brands/${brandId}`)
@@ -84,6 +86,30 @@ export default function BrandDetail() {
     }
   }
 
+  function cancelBrandEditing() {
+    setForm(editableFields(brand))
+    setEditing(false)
+    setError('')
+  }
+
+  async function addToMediaKit(event, collab) {
+    event.preventDefault()
+    event.stopPropagation()
+    setAddingToMediaKit(collab.id)
+    setError('')
+    setMediaKitNotice('')
+    try {
+      const response = await authFetch(`/api/brands/${brand.id}/collabs/${collab.id}/media-kit`, { method: 'POST' })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(data?.detail || 'Could not add this collaboration to the media kit')
+      setMediaKitNotice(data.message)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setAddingToMediaKit(null)
+    }
+  }
+
   if (!brand) {
     return (
       <div className="admin-page brand-profile-page">
@@ -105,7 +131,7 @@ export default function BrandDetail() {
           <p>{brand.contact_person || 'No contact person'}{brand.email ? ` · ${brand.email}` : ''}</p>
         </div>
         <div className="header-actions">
-          <Button variant="secondary" onClick={() => setEditing((current) => !current)}>
+          <Button variant="secondary" onClick={() => editing ? cancelBrandEditing() : setEditing(true)}>
             {editing ? 'Cancel editing' : 'Edit profile'}
           </Button>
           <Button to={`/admin?new_collab=1&brand_id=${brand.id}`} icon="+">Start collaboration</Button>
@@ -113,6 +139,7 @@ export default function BrandDetail() {
       </header>
 
       {saved && <Feedback tone="success" title="Brand profile saved">The latest contact details and notes are now available to your manager.</Feedback>}
+      {mediaKitNotice && <Feedback tone="success" title="Media-kit draft updated">{mediaKitNotice}. Review it in Media Kit Studio, then publish when ready.</Feedback>}
       {error && <Feedback tone="error" title="Something went wrong">{error}</Feedback>}
 
       <section className="brand-profile-metrics">
@@ -145,7 +172,10 @@ export default function BrandDetail() {
                 <FormField label="Private relationship notes">
                   <textarea rows="6" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Preferences, negotiation history, follow-up context..." />
                 </FormField>
-                <Button type="submit" loading={saving}>{saving ? 'Saving profile' : 'Save changes'}</Button>
+                <div className="inline-form-actions">
+                  <Button type="button" size="sm" variant="ghost" onClick={cancelBrandEditing} disabled={saving}>Discard</Button>
+                  <Button type="submit" size="sm" loading={saving}>{saving ? 'Saving' : 'Save changes'}</Button>
+                </div>
               </form>
             ) : (
               <>
@@ -184,6 +214,16 @@ export default function BrandDetail() {
                       <span>{formatDate(collab.created_at)}</span>
                     </div>
                     <span className={`status-pill status-${collab.status}`}>{STAGE_LABELS[collab.status] || collab.status}</span>
+                    <span
+                      className="brand-media-kit-action"
+                      role="button"
+                      tabIndex="0"
+                      aria-disabled={addingToMediaKit === collab.id}
+                      onClick={(event) => addToMediaKit(event, collab)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') addToMediaKit(event, collab)
+                      }}
+                    >{addingToMediaKit === collab.id ? 'Adding…' : '+ Media kit'}</span>
                     <i aria-hidden="true">→</i>
                   </Link>
                 ))}
@@ -215,7 +255,7 @@ export default function BrandDetail() {
 }
 
 function EmptyRecord({ title, text }) {
-  return <div className="brand-record-empty"><span>—</span><strong>{title}</strong><p>{text}</p></div>
+  return <div className="brand-record-empty"><span>•</span><strong>{title}</strong><p>{text}</p></div>
 }
 
 function editableFields(brand) {

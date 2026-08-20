@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
@@ -9,6 +9,12 @@ from ..database import get_db
 
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+DELIVERY_COMPLETE_STATUSES = {"content_posted", "payment_received", "closed"}
+STATUS_MILESTONE_TITLES = {
+    "content_posted": "Content posted",
+    "payment_received": "Payment received",
+    "closed": "Campaign closed",
+}
 
 
 def _utc(value: datetime | str | None) -> datetime | None:
@@ -49,7 +55,7 @@ def manager_calendar(
     for collab in collabs:
         brand_name = collab.brand.name if collab.brand else f"Brand #{collab.brand_id}"
         deadline = _utc(collab.deadline)
-        if deadline and window_start <= deadline < window_end:
+        if collab.status not in DELIVERY_COMPLETE_STATUSES and deadline and window_start <= deadline < window_end:
             events.append({
                 "key": f"deadline-{collab.id}",
                 "type": "deadline",
@@ -61,8 +67,25 @@ def manager_calendar(
                 "href": f"/admin/collabs/{collab.id}",
             })
 
+        milestone = next((
+            entry for entry in reversed((collab.details or {}).get("activity_log") or [])
+            if entry.get("to_status") == collab.status and collab.status in DELIVERY_COMPLETE_STATUSES
+        ), None)
+        milestone_at = _utc(milestone.get("timestamp")) if milestone else None
+        if milestone_at and window_start <= milestone_at < window_end:
+            events.append({
+                "key": f"status-{collab.id}-{collab.status}",
+                "type": "content",
+                "title": STATUS_MILESTONE_TITLES[collab.status],
+                "starts_at": milestone_at,
+                "brand_name": brand_name,
+                "detail": collab.campaign_type or collab.deliverables,
+                "status": collab.status,
+                "href": f"/admin/collabs/{collab.id}",
+            })
+
         follow_up = _utc((collab.details or {}).get("follow_up_at"))
-        if follow_up and window_start <= follow_up < window_end:
+        if collab.status not in {"payment_received", "closed"} and follow_up and window_start <= follow_up < window_end:
             events.append({
                 "key": f"follow-up-{collab.id}",
                 "type": "follow_up",
@@ -115,5 +138,47 @@ def manager_calendar(
                 "href": "/admin/content",
             })
 
+    notes = (
+        db.query(models.CalendarNote)
+        .filter(
+            models.CalendarNote.note_date >= window_start.date(),
+            models.CalendarNote.note_date < window_end.date(),
+        )
+        .order_by(models.CalendarNote.note_date)
+        .all()
+    )
     events.sort(key=lambda event: (event["starts_at"], event["type"], event["title"]))
-    return {"start": window_start, "end": window_end, "events": events}
+    return {"start": window_start, "end": window_end, "events": events, "notes": notes}
+
+
+@router.put("/notes/{note_date}", response_model=schemas.CalendarNoteOut)
+def save_calendar_note(
+    note_date: date,
+    payload: schemas.CalendarNoteUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(400, "Note cannot be empty")
+    note = db.query(models.CalendarNote).filter(models.CalendarNote.note_date == note_date).first()
+    if note:
+        note.content = content
+    else:
+        note = models.CalendarNote(note_date=note_date, content=content)
+        db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.delete("/notes/{note_date}", status_code=204)
+def delete_calendar_note(
+    note_date: date,
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    note = db.query(models.CalendarNote).filter(models.CalendarNote.note_date == note_date).first()
+    if note:
+        db.delete(note)
+        db.commit()

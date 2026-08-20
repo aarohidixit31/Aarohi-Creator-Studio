@@ -15,8 +15,12 @@ const EVENT_TYPES = [
 export default function ManagerCalendar() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
   const [events, setEvents] = useState([])
+  const [notes, setNotes] = useState([])
   const [enabledTypes, setEnabledTypes] = useState(() => new Set(EVENT_TYPES.map(([value]) => value)))
   const [selectedDate, setSelectedDate] = useState(() => dateKey(new Date()))
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteSaving, setNoteSaving] = useState(false)
+  const [noteMessage, setNoteMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -38,12 +42,16 @@ export default function ManagerCalendar() {
         }
         return response.json()
       })
-      .then((data) => setEvents(data.events || []))
+      .then((data) => {
+        setEvents(data.events || [])
+        setNotes(data.notes || [])
+      })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [gridStart, gridEnd])
 
   const visibleEvents = useMemo(() => events.filter((event) => enabledTypes.has(event.type)), [events, enabledTypes])
+  const notesByDay = useMemo(() => new Map(notes.map((note) => [note.note_date, note])), [notes])
   const eventsByDay = useMemo(() => {
     const grouped = new Map()
     visibleEvents.forEach((event) => {
@@ -54,9 +62,16 @@ export default function ManagerCalendar() {
   }, [visibleEvents])
   const days = useMemo(() => Array.from({ length: 42 }, (_, index) => addDays(gridStart, index)), [gridStart])
   const selectedEvents = eventsByDay.get(selectedDate) || []
+  const selectedNote = notesByDay.get(selectedDate)
+  const noteDirty = noteDraft !== (selectedNote?.content || '')
   const upcoming = visibleEvents
     .filter((event) => new Date(event.starts_at) >= startOfDay(new Date()))
     .slice(0, 8)
+
+  useEffect(() => {
+    setNoteDraft(selectedNote?.content || '')
+    setNoteMessage('')
+  }, [selectedDate, selectedNote?.content])
 
   function moveMonth(offset) {
     const next = new Date(month.getFullYear(), month.getMonth() + offset, 1)
@@ -68,6 +83,54 @@ export default function ManagerCalendar() {
     const today = new Date()
     setMonth(startOfMonth(today))
     setSelectedDate(dateKey(today))
+  }
+
+  function selectDate(key) {
+    if (noteDirty && !window.confirm('Discard the unsaved note for this date?')) return
+    setSelectedDate(key)
+  }
+
+  async function saveNote() {
+    const content = noteDraft.trim()
+    if (!content) {
+      setNoteMessage('Write something before saving the note.')
+      return
+    }
+    setNoteSaving(true)
+    setNoteMessage('')
+    try {
+      const response = await authFetch(`/api/calendar/notes/${selectedDate}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+      const body = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(body?.detail || 'Could not save note')
+      setNotes((current) => [...current.filter((note) => note.note_date !== selectedDate), body])
+      setNoteDraft(body.content)
+      setNoteMessage('Note saved')
+    } catch (err) {
+      setNoteMessage(err.message)
+    } finally {
+      setNoteSaving(false)
+    }
+  }
+
+  async function deleteNote() {
+    if (!selectedNote || !window.confirm(`Delete the note for ${humanDate(selectedDate)}?`)) return
+    setNoteSaving(true)
+    setNoteMessage('')
+    try {
+      const response = await authFetch(`/api/calendar/notes/${selectedDate}`, { method: 'DELETE' })
+      if (!response.ok) throw new Error('Could not delete note')
+      setNotes((current) => current.filter((note) => note.note_date !== selectedDate))
+      setNoteDraft('')
+      setNoteMessage('Note deleted')
+    } catch (err) {
+      setNoteMessage(err.message)
+    } finally {
+      setNoteSaving(false)
+    }
   }
 
   function toggleType(type) {
@@ -125,9 +188,9 @@ export default function ManagerCalendar() {
                   type="button"
                   className={`calendar-day${outside ? ' outside' : ''}${key === selectedDate ? ' selected' : ''}${key === dateKey(new Date()) ? ' today' : ''}`}
                   key={key}
-                  onClick={() => setSelectedDate(key)}
+                  onClick={() => selectDate(key)}
                 >
-                  <span className="calendar-day-number">{day.getDate()}</span>
+                  <span className="calendar-day-number">{day.getDate()}{notesByDay.has(key) && <i className="calendar-note-dot" title="Manager note added" />}</span>
                   <div className="calendar-day-events">
                     {dayEvents.slice(0, 3).map((event) => (
                       <span className={`calendar-event-chip event-${event.type}`} key={event.key} title={`${event.brand_name || ''} ${event.title}`}>
@@ -151,6 +214,21 @@ export default function ManagerCalendar() {
             <div className="calendar-agenda-list">
               {selectedEvents.map((event) => <CalendarAgendaItem event={event} key={event.key} />)}
               {!selectedEvents.length && <div className="calendar-empty-day"><span>✓</span><strong>No scheduled work</strong><p>This day is clear.</p></div>}
+            </div>
+            <div className="calendar-note-editor">
+              <header><span>Manager note</span>{noteDirty && <em>Unsaved</em>}</header>
+              <textarea
+                rows="5"
+                maxLength="5000"
+                value={noteDraft}
+                onChange={(event) => { setNoteDraft(event.target.value); setNoteMessage('') }}
+                placeholder="Add priorities, ideas, calls, personal reminders or anything else for this date..."
+              />
+              <div>
+                {selectedNote && <button type="button" className="calendar-note-delete" onClick={deleteNote} disabled={noteSaving}>Delete</button>}
+                <span className={noteMessage && !['Note saved', 'Note deleted'].includes(noteMessage) ? 'error' : ''}>{noteMessage}</span>
+                <Button size="sm" onClick={saveNote} loading={noteSaving} disabled={!noteDirty || !noteDraft.trim()}>Save note</Button>
+              </div>
             </div>
           </section>
 

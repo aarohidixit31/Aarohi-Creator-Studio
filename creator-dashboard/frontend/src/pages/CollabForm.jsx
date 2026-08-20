@@ -272,7 +272,7 @@ export default function CollabForm() {
 
             <div className="collab-submit-row">
               <p>By submitting, you agree that Aarohi or her manager may contact you about this campaign.</p>
-              <Button type="submit" loading={status === 'sending'} icon="->">
+              <Button type="submit" size="sm" loading={status === 'sending'} icon="->">
                 {status === 'sending' ? 'Sending inquiry' : 'Send partnership inquiry'}
               </Button>
             </div>

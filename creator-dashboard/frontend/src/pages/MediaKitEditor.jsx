@@ -10,6 +10,7 @@ const EMPTY = {
   contact_email: '',
   contact_phone: '',
   profile_image_url: '',
+  portrait_style: 'framed',
   cover_image_url: '',
   instagram_handle: '',
   youtube_handle: '',
@@ -25,7 +26,7 @@ const EMPTY = {
   past_collabs: [],
   testimonials: [],
   gallery: [],
-  section_order: ['pillars', 'proof', 'audience', 'gallery', 'case_studies', 'services', 'collaborations', 'partner_reasons', 'testimonials'],
+  section_order: ['pillars', 'proof', 'audience', 'gallery', 'services', 'collaborations', 'partner_reasons', 'testimonials'],
   hidden_sections: [],
 }
 
@@ -34,7 +35,6 @@ const SECTION_LABELS = {
   proof: 'Performance proof',
   audience: 'Audience & social links',
   gallery: 'Photos & gallery',
-  case_studies: 'Published case studies',
   services: 'Services & rates',
   collaborations: 'Past collaborations',
   partner_reasons: 'Why brands partner',
@@ -93,7 +93,7 @@ const STARTER = {
     'GeeksforGeeks', 'Coding Ninjas', 'KPIT Sparkle', 'Chitkara University',
     'CareerRoadmap', 'Codeflix Labs', 'Code Monsters', 'SuperProfile',
     'Bits Pilani Hyderabad', 'E-cell IIT Ropar', 'upgrad',
-  ].map((brand) => ({ brand, summary: '', logo_url: '', image_url: '', content_url: '' })),
+  ].map((brand) => ({ brand, summary: '', logo_url: '', image_url: '', content_url: '', views: '' })),
 }
 
 export default function MediaKitEditor() {
@@ -107,6 +107,8 @@ export default function MediaKitEditor() {
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [active, setActive] = useState('profile')
+  const [contentItems, setContentItems] = useState([])
+  const [featuringContent, setFeaturingContent] = useState(null)
 
   useEffect(() => {
     authFetch('/api/media-kit/draft')
@@ -129,6 +131,13 @@ export default function MediaKitEditor() {
       .then((response) => response.ok ? response.json() : null)
       .then(setStorage)
       .catch(() => setStorage(null))
+  }, [])
+
+  useEffect(() => {
+    authFetch('/api/content/')
+      .then((response) => response.ok ? response.json() : [])
+      .then(setContentItems)
+      .catch(() => setContentItems([]))
   }, [])
 
   const dirty = Boolean(baseline && JSON.stringify(clean(form)) !== baseline)
@@ -154,6 +163,26 @@ export default function MediaKitEditor() {
 
   function patch(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  async function toggleFeaturedContent(item) {
+    setFeaturingContent(item.id)
+    setError('')
+    try {
+      const response = await authFetch(`/api/content/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featured: !item.featured }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(payload?.detail || 'Could not update featured content')
+      setContentItems((current) => current.map((entry) => entry.id === payload.id ? payload : entry))
+      setNotice(payload.featured ? 'Added to the public featured-content section.' : 'Removed from the public featured-content section.')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setFeaturingContent(null)
+    }
   }
 
   function patchItem(field, index, key, value) {
@@ -316,6 +345,12 @@ export default function MediaKitEditor() {
                 <ImageField label="Profile photo" value={form.profile_image_url} onChange={(url) => patch('profile_image_url', url)} />
                 <ImageField label="Cover/banner image" value={form.cover_image_url} onChange={(url) => patch('cover_image_url', url)} wide />
               </div>
+              <Field label="Portrait treatment" hint="Editorial cutout works best with a transparent-background PNG or WebP.">
+                <select value={form.portrait_style || 'framed'} onChange={(e) => patch('portrait_style', e.target.value)}>
+                  <option value="framed">Framed photo</option>
+                  <option value="cutout">Editorial cutout</option>
+                </select>
+              </Field>
               <StringList
                 title="Content pillars"
                 items={form.content_pillars}
@@ -422,7 +457,7 @@ export default function MediaKitEditor() {
               <RepeatList
                 title="Brand collaborations"
                 items={form.past_collabs}
-                onAdd={() => addItem('past_collabs', { brand: '', summary: '', logo_url: '', image_url: '', content_url: '' })}
+                onAdd={() => addItem('past_collabs', { brand: '', summary: '', logo_url: '', image_url: '', content_url: '', views: '' })}
                 onRemove={(index) => removeItem('past_collabs', index)}
                 onMove={(index, direction) => moveItem('past_collabs', index, direction)}
                 onToggleVisibility={(index) => patchItem('past_collabs', index, 'visible', form.past_collabs[index].visible === false)}
@@ -432,8 +467,9 @@ export default function MediaKitEditor() {
                       <Field label="Brand"><input value={item.brand} onChange={(e) => patchItem('past_collabs', index, 'brand', e.target.value)} /></Field>
                       <Field label="Live content URL"><input type="url" value={item.content_url || ''} onChange={(e) => patchItem('past_collabs', index, 'content_url', e.target.value)} /></Field>
                     </div>
+                    <Field label="Campaign views"><input type="number" min="0" placeholder="Used to select the strongest campaign for this brand" value={item.views || ''} onChange={(e) => patchItem('past_collabs', index, 'views', e.target.value ? Number(e.target.value) : '')} /></Field>
                     <Field label="Campaign summary"><input value={item.summary || ''} onChange={(e) => patchItem('past_collabs', index, 'summary', e.target.value)} /></Field>
-                    <ImageField compact label="Campaign photo or logo" value={item.image_url || item.logo_url || ''} onChange={(url) => patchItem('past_collabs', index, 'image_url', url)} />
+                    <ImageField compact label="Brand logo" value={item.logo_url || item.image_url || ''} onChange={(url) => patchItem('past_collabs', index, 'logo_url', url)} />
                   </>
                 )}
               />
@@ -463,9 +499,31 @@ export default function MediaKitEditor() {
           )}
 
           {active === 'gallery' && (
-            <EditorSection title="Photos & gallery" description="Upload analytics screenshots, campaign images and other visual proof.">
+            <EditorSection title="Featured content & gallery" description="Choose imported reels or videos for the public media kit, then add campaign photography and other visual proof.">
+              <div className="media-feature-picker">
+                <div className="media-feature-picker-heading">
+                  <div><strong>Featured reels & videos</strong><span>Only selected content appears publicly.</span></div>
+                  <em>{contentItems.filter((item) => item.featured).length} selected</em>
+                </div>
+                {contentItems.length ? (
+                  <div className="media-feature-picker-grid">
+                    {contentItems.slice(0, 18).map((item) => (
+                      <article className={item.featured ? 'is-featured' : ''} key={item.id}>
+                        <div className="media-feature-picker-thumb">
+                          {item.thumbnail_url ? <img src={absoluteMediaUrl(item.thumbnail_url)} alt="" /> : <span>{item.platform?.slice(0, 2)}</span>}
+                          <i>{item.platform}</i>
+                        </div>
+                        <div><strong>{item.title}</strong><small>{Number(item.metrics?.views || item.metrics?.reach || 0).toLocaleString('en-IN')} {item.metrics?.views ? 'views' : 'reach'}</small></div>
+                        <button type="button" disabled={featuringContent === item.id} onClick={() => toggleFeaturedContent(item)}>
+                          {featuringContent === item.id ? 'Saving…' : item.featured ? 'Featured ✓' : 'Feature'}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                ) : <div className="media-feature-picker-empty">Imported Instagram and YouTube content will appear here for selection.</div>}
+              </div>
               <RepeatList
-                title="Media gallery"
+                title="Campaign gallery"
                 items={form.gallery}
                 onAdd={() => addItem('gallery', { title: '', image_url: '', category: 'Performance', caption: '', link_url: '' })}
                 onRemove={(index) => removeItem('gallery', index)}

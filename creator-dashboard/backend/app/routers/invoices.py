@@ -99,6 +99,27 @@ def create_invoice(
     brand = db.query(models.Brand).filter(models.Brand.id == payload.brand_id).first()
     if not brand:
         raise HTTPException(404, "Brand not found")
+    if payload.collab_id:
+        collab = db.query(models.Collab).filter(models.Collab.id == payload.collab_id).first()
+        if not collab:
+            raise HTTPException(404, "Collaboration not found")
+        if collab.brand_id != payload.brand_id:
+            raise HTTPException(400, "The selected collaboration belongs to another brand")
+        existing_invoice = (
+            db.query(models.Invoice)
+            .filter(models.Invoice.collab_id == payload.collab_id)
+            .order_by(models.Invoice.created_at.desc())
+            .first()
+        )
+        if existing_invoice and not payload.allow_duplicate:
+            raise HTTPException(409, detail={
+                "code": "invoice_exists",
+                "message": f"{existing_invoice.invoice_number} already exists for this collaboration",
+                "invoice_id": existing_invoice.id,
+                "invoice_number": existing_invoice.invoice_number,
+                "status": existing_invoice.status,
+                "total": existing_invoice.total,
+            })
 
     subtotal = sum(item.quantity * item.rate for item in payload.line_items)
     total = subtotal * (1 + payload.tax_percent / 100)
@@ -134,17 +155,41 @@ def list_invoices(db: Session = Depends(get_db), admin=Depends(get_current_admin
 @router.get("/ledger", response_model=schemas.InvoiceLedgerOut)
 def invoice_ledger(db: Session = Depends(get_db), admin=Depends(get_current_admin)):
     invoices = db.query(models.Invoice).all()
+    collaborations = db.query(models.Collab).all()
     paid = [invoice for invoice in invoices if invoice.status == "paid"]
     outstanding = [invoice for invoice in invoices if invoice.status in ("sent", "overdue")]
     drafts = [invoice for invoice in invoices if invoice.status == "draft"]
+    invoice_received = sum(invoice.total or 0 for invoice in paid)
+    paid_by_collab = {}
+    for invoice in paid:
+        if invoice.collab_id is not None:
+            paid_by_collab[invoice.collab_id] = paid_by_collab.get(invoice.collab_id, 0) + (invoice.total or 0)
+    historical_received = 0
+    historical_paid_count = 0
+    for collab in collaborations:
+        finance = dict((collab.details or {}).get("finance") or {})
+        has_manual_tracking = finance.get("amount_received") is not None or bool(finance.get("tds_deduction"))
+        tracked_gross = float(finance.get("amount_received") or 0) + float(finance.get("tds_deduction") or 0)
+        if not has_manual_tracking and collab.status == "payment_received":
+            tracked_gross = float(collab.budget or 0)
+        additional_received = max(tracked_gross - float(paid_by_collab.get(collab.id, 0)), 0)
+        if additional_received:
+            historical_received += additional_received
+            historical_paid_count += 1
     return {
+        "total_collaboration_value": sum(collab.budget or 0 for collab in collaborations),
+        "total_business_received": invoice_received + historical_received,
+        "historical_received": historical_received,
         "total_invoiced": sum(invoice.total or 0 for invoice in invoices),
-        "total_received": sum(invoice.total or 0 for invoice in paid),
+        "total_received": invoice_received,
         "total_outstanding": sum(invoice.total or 0 for invoice in outstanding),
         "total_draft": sum(invoice.total or 0 for invoice in drafts),
         "invoice_count": len(invoices),
         "paid_count": len(paid),
         "outstanding_count": len(outstanding),
+        "collaboration_count": len(collaborations),
+        "valued_collaboration_count": sum(collab.budget is not None for collab in collaborations),
+        "historical_paid_count": historical_paid_count,
     }
 
 

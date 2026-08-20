@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -9,6 +10,7 @@ from .. import models, schemas
 from ..auth import get_current_admin
 from ..database import get_db
 from ..services.email import email_is_configured, send_inquiry_notifications
+from ..services.storage import store_document
 
 router = APIRouter(prefix="/api/collabs", tags=["collabs"])
 
@@ -28,6 +30,26 @@ VALID_STATUSES = [
 VALID_PRIORITIES = {"low", "normal", "high", "urgent"}
 VALID_ASSIGNEES = {"unassigned", "aarohi", "manager"}
 VALID_WAITING_ON = {"none", "brand", "aarohi", "manager"}
+RESOURCE_KINDS = {
+    "Brief", "Script", "Contract", "Draft", "Reference", "Brand assets",
+    "Drive folder", "Live content", "Other",
+}
+RESOURCE_UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads" / "collab-resources"
+MAX_RESOURCE_BYTES = 15 * 1024 * 1024
+ALLOWED_RESOURCE_TYPES = {
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-powerpoint": ".ppt",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "application/zip": ".zip",
+    "text/plain": ".txt",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
 
 
 def _activity(
@@ -54,7 +76,22 @@ def _detail_payload(collab: models.Collab) -> dict:
             stage_entered_at = event["timestamp"]
             break
     resources = details.get("resource_links") or []
+    agreement = dict(details.get("agreement") or {})
     invoices = collab.invoices or []
+    finance = dict(details.get("finance") or {})
+    paid_invoices = [invoice for invoice in invoices if invoice.status == "paid"]
+    invoiced_amount = sum(invoice.total or 0 for invoice in invoices)
+    paid_invoice_amount = sum(invoice.total or 0 for invoice in paid_invoices)
+    manually_tracked = "amount_received" in finance and finance.get("amount_received") is not None
+    amount_received = float(finance.get("amount_received") or 0) if manually_tracked else paid_invoice_amount
+    if not manually_tracked and not paid_invoices and collab.status == "payment_received":
+        amount_received = float(collab.budget or 0)
+    tds_deduction = float(finance.get("tds_deduction") or 0)
+    other_deductions = float(finance.get("other_deductions") or 0)
+    settled_amount = amount_received + tds_deduction + other_deductions
+    payment_date = finance.get("payment_date")
+    if not payment_date and paid_invoices:
+        payment_date = max((invoice.paid_at for invoice in paid_invoices if invoice.paid_at), default=None)
     return {
         "id": collab.id,
         "brand_id": collab.brand_id,
@@ -79,12 +116,22 @@ def _detail_payload(collab: models.Collab) -> dict:
         "next_action": details.get("next_action"),
         "stage_entered_at": stage_entered_at,
         "archived_at": collab.archived_at,
-        "has_agreement": any(
+        "has_agreement": agreement.get("status") in {"draft", "sent", "signed"} or any(
             str(item.get("kind") or "").casefold() in {"contract", "agreement"}
             for item in resources if isinstance(item, dict)
         ),
         "invoice_count": len(invoices),
         "paid_invoice_count": sum(invoice.status == "paid" for invoice in invoices),
+        "invoiced_amount": invoiced_amount,
+        "amount_received": amount_received,
+        "gross_received": amount_received + tds_deduction,
+        "remaining_balance": max(float(collab.budget or 0) - settled_amount, 0),
+        "payment_date": payment_date,
+        "payment_method": finance.get("payment_method"),
+        "tds_deduction": tds_deduction,
+        "other_deductions": other_deductions,
+        "finance_notes": finance.get("finance_notes"),
+        "finance_tracking_enabled": "finance" in details,
     }
 
 
@@ -155,7 +202,7 @@ def attention_dashboard(
             })
 
         deadline = _utc(collab.deadline)
-        if deadline and deadline <= soon:
+        if collab.status not in {"content_posted", "payment_received", "closed"} and deadline and deadline <= soon:
             items.append({
                 "key": f"deadline-{collab.id}",
                 "type": "deadline",
@@ -417,6 +464,73 @@ def get_collab_detail(
     return _detail_payload(collab)
 
 
+@router.post("/{collab_id}/resources", response_model=schemas.CollabDetailOut)
+async def upload_collaboration_resource(
+    collab_id: int,
+    file: UploadFile = File(...),
+    kind: str = Form("Other"),
+    label: str | None = Form(None),
+    db: Session = Depends(get_db),
+    admin=Depends(get_current_admin),
+):
+    """Upload a permanent campaign brief, script, document, or supporting asset."""
+    collab = (
+        db.query(models.Collab)
+        .options(joinedload(models.Collab.brand), selectinload(models.Collab.invoices))
+        .filter(models.Collab.id == collab_id)
+        .first()
+    )
+    if not collab:
+        raise HTTPException(404, "Collaboration not found")
+    if kind not in RESOURCE_KINDS:
+        raise HTTPException(400, "Choose a valid resource category")
+
+    content_type = (file.content_type or "").casefold()
+    extension = ALLOWED_RESOURCE_TYPES.get(content_type)
+    if not extension:
+        raise HTTPException(
+            400,
+            "Upload a PDF, Word, Excel, PowerPoint, ZIP, text, JPG, PNG, or WebP file",
+        )
+    contents = await file.read(MAX_RESOURCE_BYTES + 1)
+    if not contents or len(contents) > MAX_RESOURCE_BYTES:
+        raise HTTPException(400, "Campaign file must be between 1 byte and 15 MB")
+
+    original_filename = Path(file.filename or f"campaign-resource{extension}").name
+    try:
+        stored = store_document(
+            contents,
+            original_filename=original_filename,
+            content_type=content_type,
+            local_directory=RESOURCE_UPLOAD_DIR,
+            local_url_prefix="/api/uploads/collab-resources",
+            local_extension=extension,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+    details = dict(collab.details or {})
+    resources = list(details.get("resource_links") or [])
+    display_label = (label or "").strip() or Path(original_filename).stem
+    resources.append({
+        "label": display_label,
+        "url": stored.url,
+        "kind": kind,
+        "source": "upload",
+        "filename": original_filename,
+        "content_type": content_type,
+        "size": len(contents),
+    })
+    activity_log = list(details.get("activity_log") or [])
+    activity_log.append(_activity("resource_uploaded", f"Uploaded {kind.lower()}: {display_label}"))
+    details["resource_links"] = resources
+    details["activity_log"] = activity_log[-100:]
+    collab.details = details
+    db.commit()
+    db.refresh(collab)
+    return _detail_payload(collab)
+
+
 @router.patch("/{collab_id}/archive")
 def archive_collaboration(
     collab_id: int,
@@ -547,6 +661,24 @@ def update_collab_detail(
             if isinstance(value, datetime):
                 value = value.isoformat()
             details[field] = value
+
+    finance_fields = {
+        "amount_received", "payment_date", "payment_method", "tds_deduction",
+        "other_deductions", "finance_notes",
+    }
+    if finance_fields.intersection(updates):
+        finance = dict(details.get("finance") or {})
+        for field in finance_fields:
+            if field not in updates:
+                continue
+            value = updates.pop(field)
+            if field in {"amount_received", "tds_deduction", "other_deductions"} and value is not None and value < 0:
+                raise HTTPException(400, f"{field.replace('_', ' ').title()} cannot be negative")
+            if isinstance(value, datetime):
+                value = value.isoformat()
+            finance[field] = value
+        details["finance"] = finance
+        activity_log.append(_activity("finance_updated", "Collaboration payment details updated"))
 
     activity_log.append(_activity("details_updated", "Collaboration workspace updated"))
     details["activity_log"] = activity_log[-100:]

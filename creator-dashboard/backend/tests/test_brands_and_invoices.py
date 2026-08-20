@@ -1,16 +1,62 @@
 from datetime import datetime, timedelta, timezone
 
+from app import models
 from app.routers import invoices as invoice_router
 from app.services.email import EmailResult
 
 
-def test_brand_directory_and_profile_update(client, seed_brand):
-    client.post("/api/collabs/", json={
+def test_csv_history_import_reuses_brands_and_skips_duplicates(client, db, seed_brand):
+    csv_body = """source_id,brand_name,contact_person,email,phone,campaign_type,status,budget,deadline,deliverables,content_link,created_at,notes,show_on_media_kit,media_kit_summary
+notion-2025,Notion,Maya,maya@notion.com,,Instagram Reel,Payment Recieved,"₹25,000",15/06/2025,1 Reel,https://instagram.com/reel/notion,2025-05-01,Successful campaign,yes,Popular productivity partnership
+notion-2025,Notion,Maya,maya@notion.com,,Instagram Reel,Payment Received,25000,2025-06-15,1 Reel,https://instagram.com/reel/notion,2025-05-01,Duplicate row,no,
+figma-2024,Figma,Ria,ria@figma.com,+91 99999 11111,YouTube Integration,Closed,40000,2024-12-20,1 Video,https://youtube.com/watch?v=figma,2024-11-01,Historical partnership,no,
+broken,Invalid Brand,,bad-email,,Reel,Closed,10000,not-a-date,,,,,,
+"""
+    response = client.post(
+        "/api/brands/import-history",
+        files={"file": ("history.csv", csv_body.encode("utf-8"), "text/csv")},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["rows_received"] == 4
+    assert result["brands_created"] == 1
+    assert result["brands_reused"] == 1
+    assert result["collabs_created"] == 2
+    assert result["duplicates_skipped"] == 1
+    assert result["rows_failed"] == 1
+    assert result["media_kit_added"] == 1
+
+    notion = db.query(models.Brand).filter_by(email="maya@notion.com").one()
+    assert len(notion.collabs) == 1
+    assert notion.collabs[0].status == "payment_received"
+    assert notion.collabs[0].budget == 25000
+    assert notion.collabs[0].details["import_source"] == "history.csv"
+    assert db.query(models.Brand).filter_by(email="ria@figma.com").count() == 1
+    media_kit = db.query(models.MediaKitContent).one()
+    assert media_kit.draft_content["past_collabs"][0]["brand"] == "Notion"
+
+    earnings = client.get("/api/invoices/ledger").json()
+    assert earnings["collaboration_count"] == 2
+    assert earnings["total_collaboration_value"] == 65000
+    assert earnings["historical_received"] == 25000
+    assert earnings["total_business_received"] == 25000
+
+    repeated = client.post(
+        "/api/brands/import-history",
+        files={"file": ("history.csv", csv_body.encode("utf-8"), "text/csv")},
+    ).json()
+    assert repeated["collabs_created"] == 0
+    assert repeated["duplicates_skipped"] == 3
+
+
+def test_brand_directory_and_profile_update(client, db, seed_brand):
+    collaboration = client.post("/api/collabs/", json={
         "brand_id": seed_brand.id,
         "status": "confirmed",
         "campaign_type": "Instagram Reel",
         "budget": 20000,
-    })
+        "deliverables": "1 Reel + 2 Stories",
+    }).json()
     directory = client.get("/api/brands/directory")
     assert directory.status_code == 200
     assert directory.json()[0]["collaboration_count"] == 1
@@ -26,6 +72,12 @@ def test_brand_directory_and_profile_update(client, seed_brand):
     detail = client.get(f"/api/brands/{seed_brand.id}")
     assert detail.json()["notes"] == "Repeat partner"
     assert len(detail.json()["collabs"]) == 1
+
+    added = client.post(f"/api/brands/{seed_brand.id}/collabs/{collaboration['id']}/media-kit")
+    assert added.status_code == 200
+    assert added.json()["added"] is True
+    draft = db.query(models.MediaKitContent).one().draft_content
+    assert draft["past_collabs"][0]["summary"] == "1 Reel + 2 Stories"
 
 
 def test_invoice_ledger_and_status(client, seed_brand):
@@ -55,6 +107,30 @@ def test_invoice_ledger_and_status(client, seed_brand):
     ledger = client.get("/api/invoices/ledger").json()
     assert ledger["total_received"] == 29500
     assert ledger["total_outstanding"] == 0
+
+
+def test_duplicate_invoice_requires_explicit_override(client, seed_brand):
+    collab = client.post("/api/collabs/", json={
+        "brand_id": seed_brand.id,
+        "campaign_type": "Launch Reel",
+        "budget": 18000,
+    }).json()
+    payload = {
+        "brand_id": seed_brand.id,
+        "collab_id": collab["id"],
+        "line_items": [{"description": "Launch Reel", "quantity": 1, "rate": 18000}],
+    }
+    first = client.post("/api/invoices/", json=payload)
+    assert first.status_code == 200
+
+    blocked = client.post("/api/invoices/", json=payload)
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "invoice_exists"
+    assert blocked.json()["detail"]["invoice_number"] == first.json()["invoice_number"]
+
+    allowed = client.post("/api/invoices/", json={**payload, "allow_duplicate": True})
+    assert allowed.status_code == 200
+    assert allowed.json()["id"] != first.json()["id"]
 
 
 def test_invoice_email_delivery_and_payment_reminder(client, seed_brand, monkeypatch):

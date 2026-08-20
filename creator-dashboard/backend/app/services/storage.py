@@ -42,7 +42,10 @@ def store_image(
     local_extension: str,
 ) -> StorageResult:
     if cloudinary_is_configured():
-        return _upload_cloudinary(contents, original_filename, content_type)
+        return _upload_cloudinary(
+            contents, original_filename, content_type,
+            resource_type="image", folder="aarohi-inframe/media-kit",
+        )
 
     if os.getenv("ENVIRONMENT", "development").casefold() == "production":
         raise RuntimeError(
@@ -59,19 +62,44 @@ def store_image(
     )
 
 
+def store_document(
+    contents: bytes,
+    *,
+    original_filename: str,
+    content_type: str,
+    local_directory: Path,
+    local_url_prefix: str,
+    local_extension: str,
+) -> StorageResult:
+    if cloudinary_is_configured():
+        return _upload_cloudinary(
+            contents, original_filename, content_type,
+            resource_type="raw", folder="aarohi-inframe/agreements",
+        )
+    if os.getenv("ENVIRONMENT", "development").casefold() == "production":
+        raise RuntimeError("Cloudinary is required in production for permanent document uploads")
+    filename = f"{uuid4().hex}{local_extension}"
+    local_directory.mkdir(parents=True, exist_ok=True)
+    (local_directory / filename).write_bytes(contents)
+    return StorageResult(url=f"{local_url_prefix.rstrip('/')}/{filename}", backend="local")
+
+
 def _upload_cloudinary(
     contents: bytes,
     original_filename: str,
     content_type: str,
+    *,
+    resource_type: str,
+    folder: str,
 ) -> StorageResult:
     cloud_name = os.environ["CLOUDINARY_CLOUD_NAME"]
     api_key = os.environ["CLOUDINARY_API_KEY"]
     api_secret = os.environ["CLOUDINARY_API_SECRET"]
-    endpoint = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
+    endpoint = f"https://api.cloudinary.com/v1_1/{cloud_name}/{resource_type}/upload"
     boundary = f"----aarohi-dashboard-{uuid4().hex}"
     body = _multipart_body(
         boundary,
-        fields={"folder": "aarohi-inframe/media-kit"},
+        fields={"folder": folder},
         file_field=("file", original_filename or "media-kit.webp", content_type, contents),
     )
     credentials = base64.b64encode(f"{api_key}:{api_secret}".encode("utf-8")).decode("ascii")

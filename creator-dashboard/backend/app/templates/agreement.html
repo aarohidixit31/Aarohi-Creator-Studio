@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 18mm 18mm 17mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); color:#7b8396; font-size:8pt; } }
+  * { box-sizing: border-box; }
+  body { color:#252936; font-family:"DejaVu Sans",Arial,sans-serif; font-size:9.2pt; line-height:1.52; margin:0; }
+  .top-rule { background:linear-gradient(90deg,#111b45 0 76%,#f5a623 76%); height:8px; margin:-18mm -18mm 14mm; }
+  header { align-items:flex-start; border-bottom:1px solid #dfe3ed; display:flex; justify-content:space-between; padding-bottom:15px; }
+  .identity { align-items:center; display:flex; }
+  .mark { align-items:center; background:#111b45; border-radius:8px; color:#ffdf45; display:flex; font-size:13pt; font-weight:800; height:40px; justify-content:center; margin-right:11px; width:40px; }
+  .identity strong { color:#111b45; display:block; font-size:16pt; letter-spacing:-.02em; }
+  .identity span { color:#747c91; font-size:8pt; }
+  .doc-meta { text-align:right; }
+  .doc-meta h1 { color:#111b45; font-size:18pt; letter-spacing:.04em; margin:0 0 3px; text-transform:uppercase; }
+  .doc-meta code { color:#5b5fef; font-size:8pt; font-weight:700; }
+  .intro { color:#555d70; font-size:9.5pt; margin:20px 0 16px; }
+  .party-grid { display:flex; gap:12px; margin-bottom:19px; }
+  .party { background:#f6f7fb; border:1px solid #e2e5ed; border-radius:8px; padding:12px 14px; width:50%; }
+  .party:first-child { border-left:4px solid #5b5fef; }
+  .party:last-child { border-left:4px solid #f5a623; }
+  .party label { color:#7b8396; display:block; font-size:7pt; font-weight:800; letter-spacing:.1em; margin-bottom:5px; text-transform:uppercase; }
+  .party strong { color:#111b45; display:block; font-size:11pt; }
+  .party span { color:#646c7f; display:block; font-size:8pt; margin-top:3px; }
+  h2 { break-after:avoid; color:#111b45; font-size:10pt; letter-spacing:.05em; margin:17px 0 7px; text-transform:uppercase; }
+  h2 span { color:#5b5fef; font-family:"DejaVu Sans Mono",monospace; margin-right:7px; }
+  p { margin:0 0 7px; }
+  ul { margin:5px 0 9px; padding-left:19px; }
+  li { margin-bottom:4px; }
+  .commercial { background:#fff8d9; border:1px solid #f0dfa0; border-radius:8px; break-inside:avoid; display:flex; gap:12px; margin:10px 0; padding:12px 14px; }
+  .commercial div { flex:1; }
+  .commercial label { color:#786c0d; display:block; font-size:7pt; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+  .commercial strong { color:#302d1d; display:block; font-size:10pt; margin-top:3px; }
+  .note { background:#f5f6ff; border-left:3px solid #5b5fef; color:#4d5570; margin:9px 0; padding:9px 12px; }
+  .signatures { break-inside:avoid; display:flex; gap:30px; margin-top:28px; }
+  .signature { border-top:1px solid #353a47; padding-top:7px; width:50%; }
+  .signature strong { color:#111b45; display:block; font-size:9pt; }
+  .signature span { color:#767e90; display:block; font-size:7.5pt; margin-top:3px; }
+  footer { border-top:1px solid #e2e5ed; color:#7b8396; font-size:7pt; margin-top:22px; padding-top:8px; }
+</style>
+</head>
+<body>
+<div class="top-rule"></div>
+<header>
+  <div class="identity"><div class="mark">AI</div><div><strong>Aarohi Inframe</strong><span>{{ creator_name }} · {{ creator_tagline }}</span></div></div>
+  <div class="doc-meta"><h1>Collaboration Agreement</h1><code>{{ agreement.agreement_number }}</code></div>
+</header>
+
+<p class="intro">This Brand Collaboration Agreement (the "Agreement") is entered into between the Creator and the Brand identified below. Both parties agree to the campaign scope and terms stated in this document.</p>
+<div class="party-grid">
+  <div class="party"><label>Creator</label><strong>{{ creator_name }}</strong><span>Aarohi Inframe</span><span>{{ creator_email }}</span></div>
+  <div class="party"><label>Brand</label><strong>{{ brand.name }}</strong><span>{{ brand.contact_person or 'Authorised representative' }}</span><span>{{ brand.email or 'Email to be confirmed' }}</span></div>
+</div>
+
+<h2><span>01</span>Purpose and services</h2>
+<p>The Creator will provide promotional content and marketing services for the Brand through the agreed social media platform(s), while maintaining the Creator's authentic tone and style.</p>
+<ul>
+  <li><strong>Deliverables:</strong> {{ agreement.deliverables or collab.campaign_type or 'To be mutually agreed in writing.' }}</li>
+  <li><strong>Delivery timeline:</strong> {{ agreement.timeline }}</li>
+  <li>The Creator will follow the approved brand brief and submit drafts for approval where applicable.</li>
+  <li>The Brand will provide required products, assets, references, briefs, and timely written feedback.</li>
+</ul>
+
+<h2><span>02</span>Production and approval</h2>
+<p><strong>Reels/video:</strong> A script will be shared for written approval before filming. After filming, material script or concept changes are outside the agreed scope. A watermarked draft may be supplied for final review before publishing.</p>
+<p><strong>Static/carousel content:</strong> The Brand must supply product photos, logos, references, and caption guidance before design begins. Up to {{ agreement.revision_limit }} minor revision{{ '' if agreement.revision_limit == 1 else 's' }} are included. Additional revisions may be chargeable and may extend delivery.</p>
+
+<h2><span>03</span>Term</h2>
+<p>This Agreement starts on <strong>{{ effective_date }}</strong> and continues until <strong>{{ termination_date }}</strong>, completion of the deliverables, or earlier termination under Section 07. Published in-feed content will remain live for at least {{ agreement.content_live_months }} month{{ '' if agreement.content_live_months == 1 else 's' }}, unless otherwise agreed in writing.</p>
+
+<h2><span>04</span>Commercial terms</h2>
+<div class="commercial">
+  <div><label>Total collaboration fee</label><strong>INR {{ "{:,.0f}".format(agreement.total_amount or 0) }}</strong></div>
+  <div><label>Payment structure</label><strong>{{ agreement.payment_structure }}</strong></div>
+  <div><label>Payment deadline</label><strong>{{ agreement.payment_due_days }} days from invoice</strong></div>
+</div>
+<p>Payment must be credited according to the agreed structure and invoice. Delays caused by the Brand's internal routing must be communicated in advance. Unpaid work may be paused, withheld, or removed from the production schedule.</p>
+
+<h2><span>05</span>Usage rights</h2>
+<div class="note">{{ agreement.usage_rights }}</div>
+<p>The Creator retains ownership of all original content unless a separate written usage-rights transfer expressly states otherwise.</p>
+
+<h2><span>06</span>Publication and disclosures</h2>
+<p>The Creator will identify the Brand and apply legally required advertising disclosures. The Brand is responsible for the accuracy and legality of product claims, assets, and instructions it supplies.</p>
+
+<h2><span>07</span>Termination</h2>
+<p>Either party may terminate in writing if the other party materially fails to meet agreed obligations, deadlines, payments, or campaign commitments. The Creator is not required to deliver or publish unpaid content. Fees for completed work and non-recoverable costs remain payable.</p>
+
+<h2><span>08</span>Confidentiality and miscellaneous</h2>
+<p>Both parties will keep non-public information, financial details, and future plans confidential. Amendments must be agreed in writing. This Agreement constitutes the entire understanding for this campaign and is governed by the laws of India.</p>
+{% if agreement.additional_terms %}<p><strong>Additional agreed terms:</strong> {{ agreement.additional_terms }}</p>{% endif %}
+
+<h2><span>09</span>Accepted and agreed</h2>
+<div class="signatures">
+  <div class="signature"><strong>{{ creator_name }}</strong><span>Creator signature</span><span>Date: ____________________</span></div>
+  <div class="signature"><strong>{{ brand.contact_person or brand.name }}</strong><span>Authorised Brand representative</span><span>Date: ____________________</span></div>
+</div>
+<footer>{{ agreement.agreement_number }} · Aarohi Inframe · Confidential collaboration document</footer>
+</body>
+</html>
